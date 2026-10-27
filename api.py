@@ -6,7 +6,9 @@ import os
 import re
 import secrets
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlsplit
 
@@ -56,6 +58,11 @@ BOOTSTRAP_HOST = "https://apig.inmoviebox.com"
 BOOTSTRAP_URL = f"{BOOTSTRAP_HOST}/wefeed-mobile-bff/tab/ranking-list?tabId=0&categoryType=4516404531735022304&page=1&perPage=1"
 
 MIN_STREAM_SEC = 60  # anything shorter is a placeholder/ad clip, not the title
+STREAM_POOL = ThreadPoolExecutor(max_workers=16, thread_name_prefix="streams")
+STREAM_CACHE_TTL = 300  # seconds; stream URLs are signed, so keep this short
+
+def _has_mp4(streams: List[Dict[str, Any]]) -> bool:
+    return any(str(s.get("format", "")).upper() == "MP4" for s in streams)
 
 WEB_DOMAINS = [
     "https://123moviesfree.club",
@@ -202,14 +209,29 @@ class MovieBoxEngine:
     def __init__(self):
         self.device_id = generate_device_id()
         self.bearer_token: Optional[str] = None
-        if cr:
-            self.session = cr.Session(impersonate="chrome120")
-            # The native API doesn't need browser impersonation, and with it each new
-            # connection to api3/apig takes ~10s to establish (vs ~0.7s without).
-            self.native_session = cr.Session()
-        else:
-            self.session = httpx.Client(timeout=25, follow_redirects=True)
-            self.native_session = self.session
+        self._local = threading.local()
+        self._stream_cache: Dict[tuple, tuple] = {}
+
+    # Sessions are per thread: stream lookups run in parallel and curl_cffi sessions aren't thread-safe.
+    @property
+    def session(self):
+        s = getattr(self._local, "session", None)
+        if s is None:
+            s = cr.Session(impersonate="chrome120") if cr else httpx.Client(timeout=25, follow_redirects=True)
+            self._local.session = s
+        return s
+
+    @property
+    def native_session(self):
+        # The native API doesn't need browser impersonation, and with it each new
+        # connection to api3/apig takes ~10s to establish (vs ~0.7s without).
+        if not cr:
+            return self.session
+        s = getattr(self._local, "native_session", None)
+        if s is None:
+            s = cr.Session()
+            self._local.native_session = s
+        return s
 
     @classmethod
     def get_instance(cls) -> "MovieBoxEngine":
@@ -327,6 +349,11 @@ class MovieBoxEngine:
         return season_list
 
     def get_streams(self, subject_id: str, season: int = 0, episode: int = 0, detail_path: Optional[str] = None) -> List[Dict[str, Any]]:
+        key = (subject_id, season, episode)
+        cached = self._stream_cache.get(key)
+        if cached and time.time() - cached[0] < STREAM_CACHE_TTL:
+            return cached[1]
+
         if not detail_path:
             try:
                 details = self.get_details(subject_id)
@@ -334,95 +361,121 @@ class MovieBoxEngine:
             except Exception:
                 detail_path = ""
         token = self.bootstrap_token()
+
+        # Every mirror and the native API are queried at once; the first mirror with an MP4 wins,
+        # since some mirrors only return DASH, which the CDN refuses.
+        native_future = STREAM_POOL.submit(self._native_streams, subject_id, season, episode)
+        web_futures = [
+            STREAM_POOL.submit(self._web_streams, domain, subject_id, season, episode, detail_path, token)
+            for domain in WEB_DOMAINS
+        ]
+        web: List[Dict[str, Any]] = []
+        for fut in as_completed(web_futures):
+            result = fut.result()
+            if _has_mp4(result):
+                web = result
+                break
+            web = web or result
+        native = native_future.result()
+
         streams: List[Dict[str, Any]] = []
         seen_urls = set()
-
-        for domain in WEB_DOMAINS:
-            play_url = (
-                f"{domain}/wefeed-h5api-bff/subject/play?"
-                f"subjectId={subject_id}&se={season}&ep={episode}&detailPath={detail_path}&"
-                f"streamSignType=1&supportCodecs%5Bhevc%5D=1&supportCodecs%5Bh264%5D=1"
-            )
-            referer = f"{domain}/movies/{detail_path}?id={subject_id}&type=/movie/detail&detailSe=&detailEp=&lang=en"
-            headers = {
-                "User-Agent": WEB_USER_AGENT,
-                "Referer": referer,
-                "Accept": "application/json",
-                "x-client-info": '{"timezone":"Asia/Calcutta"}',
-                "x-request-lang": "en",
-                "x-vip-restrict": "0",
-                "x-no-high-risk-restrict": "0",
-                "x-source": "moviebox",
-                "Authorization": f"Bearer {token}",
-            }
-            try:
-                resp = self.session.get(play_url, headers=headers, timeout=12)
-                if resp.status_code != 200:
-                    continue
-                data = resp.json().get("data", {})
-                raw_streams = data.get("streams", [])
-                dash_items = data.get("dash", [])
-
-                if raw_streams or dash_items:
-                    for st in raw_streams:
-                        url = st.get("url")
-                        if not url or url in seen_urls:
-                            continue
-                        seen_urls.add(url)
-                        res_str = str(st.get("resolutions", "unknown"))
-                        size_bytes = int(st.get("size") or 0)
-                        size_mb = size_bytes / (1024 * 1024) if size_bytes else 0
-                        quality_val = 0
-                        for q in (2160, 1440, 1080, 720, 480, 360, 240):
-                            if str(q) in res_str:
-                                quality_val = q
-                                break
-                        streams.append({
-                            "source": f"Web CDN ({domain})",
-                            "format": st.get("format", "MP4"),
-                            "quality": f"{quality_val}p" if quality_val else res_str,
-                            "quality_value": quality_val,
-                            "resolution_tag": res_str,
-                            "url": url,
-                            "size_mb": round(size_mb, 1),
-                            "codec": st.get("codecName"),
-                            "duration_sec": st.get("duration"),
-                            "headers": {
-                                "User-Agent": "Mozilla/5.0",
-                                "Referer": f"{domain}/",
-                                "Origin": domain,
-                            }
-                        })
-
-                    for d in dash_items:
-                        url = d.get("url")
-                        cookie = d.get("signCookie")
-                        extracted_mpd = extract_policy_resource(cookie) if cookie else None
-                        final_url = extracted_mpd or url
-                        if final_url and final_url not in seen_urls:
-                            seen_urls.add(final_url)
-                            res_tag = str(d.get("resolutions", "adaptive"))
-                            streams.append({
-                                "source": f"Web DASH ({domain})",
-                                "format": "DASH",
-                                "quality": "1080p (Adaptive)" if "1080" in res_tag else "Adaptive",
-                                "quality_value": 1080 if "1080" in res_tag else 999,
-                                "resolution_tag": res_tag,
-                                "url": final_url,
-                                "size_mb": 0,
-                                "codec": "hevc/h264",
-                                "duration_sec": None,
-                                "cookie": cookie,
-                                "headers": {
-                                    "User-Agent": "Mozilla/5.0",
-                                    "Referer": f"{domain}/",
-                                    "Origin": domain,
-                                }
-                            })
-                    break
-            except Exception:
+        for st in web + native:
+            # The native API pads results with the same ~23s placeholder clip for every title.
+            if st.get("duration_sec") and st["duration_sec"] < MIN_STREAM_SEC:
                 continue
+            if st["url"] not in seen_urls:
+                seen_urls.add(st["url"])
+                streams.append(st)
+        streams.sort(key=lambda s: s["quality_value"], reverse=True)
+        if _has_mp4(streams):
+            self._stream_cache[key] = (time.time(), streams)
+        return streams
 
+    def _web_streams(self, domain: str, subject_id: str, season: int, episode: int, detail_path: str, token: str) -> List[Dict[str, Any]]:
+        play_url = (
+            f"{domain}/wefeed-h5api-bff/subject/play?"
+            f"subjectId={subject_id}&se={season}&ep={episode}&detailPath={detail_path}&"
+            f"streamSignType=1&supportCodecs%5Bhevc%5D=1&supportCodecs%5Bh264%5D=1"
+        )
+        referer = f"{domain}/movies/{detail_path}?id={subject_id}&type=/movie/detail&detailSe=&detailEp=&lang=en"
+        headers = {
+            "User-Agent": WEB_USER_AGENT,
+            "Referer": referer,
+            "Accept": "application/json",
+            "x-client-info": '{"timezone":"Asia/Calcutta"}',
+            "x-request-lang": "en",
+            "x-vip-restrict": "0",
+            "x-no-high-risk-restrict": "0",
+            "x-source": "moviebox",
+            "Authorization": f"Bearer {token}",
+        }
+        streams: List[Dict[str, Any]] = []
+        try:
+            resp = self.session.get(play_url, headers=headers, timeout=12)
+            if resp.status_code != 200:
+                return []
+            data = resp.json().get("data", {})
+        except Exception:
+            return []
+
+        for st in data.get("streams", []):
+            url = st.get("url")
+            if not url:
+                continue
+            res_str = str(st.get("resolutions", "unknown"))
+            size_bytes = int(st.get("size") or 0)
+            size_mb = size_bytes / (1024 * 1024) if size_bytes else 0
+            quality_val = 0
+            for q in (2160, 1440, 1080, 720, 480, 360, 240):
+                if str(q) in res_str:
+                    quality_val = q
+                    break
+            streams.append({
+                "source": f"Web CDN ({domain})",
+                "format": st.get("format", "MP4"),
+                "quality": f"{quality_val}p" if quality_val else res_str,
+                "quality_value": quality_val,
+                "resolution_tag": res_str,
+                "url": url,
+                "size_mb": round(size_mb, 1),
+                "codec": st.get("codecName"),
+                "duration_sec": st.get("duration"),
+                "headers": {
+                    "User-Agent": "Mozilla/5.0",
+                    "Referer": f"{domain}/",
+                    "Origin": domain,
+                }
+            })
+
+        for d in data.get("dash", []):
+            url = d.get("url")
+            cookie = d.get("signCookie")
+            extracted_mpd = extract_policy_resource(cookie) if cookie else None
+            final_url = extracted_mpd or url
+            if final_url:
+                res_tag = str(d.get("resolutions", "adaptive"))
+                streams.append({
+                    "source": f"Web DASH ({domain})",
+                    "format": "DASH",
+                    "quality": "1080p (Adaptive)" if "1080" in res_tag else "Adaptive",
+                    "quality_value": 1080 if "1080" in res_tag else 999,
+                    "resolution_tag": res_tag,
+                    "url": final_url,
+                    "size_mb": 0,
+                    "codec": "hevc/h264",
+                    "duration_sec": None,
+                    "cookie": cookie,
+                    "headers": {
+                        "User-Agent": "Mozilla/5.0",
+                        "Referer": f"{domain}/",
+                        "Origin": domain,
+                    }
+                })
+        return streams
+
+    def _native_streams(self, subject_id: str, season: int, episode: int) -> List[Dict[str, Any]]:
+        streams: List[Dict[str, Any]] = []
         try:
             native_url = f"/wefeed-mobile-bff/subject-api/play-info?subjectId={subject_id}&se={season}&ep={episode}"
             native_data = self.api_request("GET", native_url).get("data", {})
@@ -433,9 +486,6 @@ class MovieBoxEngine:
                 cookie = st.get("signCookie")
                 policy_url = extract_policy_resource(cookie) if cookie else None
                 final_url = policy_url or raw_url
-                if final_url in seen_urls:
-                    continue
-                seen_urls.add(final_url)
                 res_str = str(st.get("resolutions", ""))
                 quality_val = 0
                 for q in (2160, 1440, 1080, 720, 480, 360, 240):
@@ -461,10 +511,6 @@ class MovieBoxEngine:
                 })
         except Exception:
             pass
-
-        # The native API pads results with the same ~23s placeholder clip for every title.
-        streams = [s for s in streams if not (s.get("duration_sec") and s["duration_sec"] < MIN_STREAM_SEC)]
-        streams.sort(key=lambda s: s["quality_value"], reverse=True)
         return streams
 
     def get_subtitles(self, subject_id: str, stream_id: Optional[str] = None, season: int = 0, episode: int = 0) -> List[Dict[str, Any]]:
