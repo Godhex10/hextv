@@ -55,6 +55,8 @@ NATIVE_API_BASE = "https://api3.aoneroom.com"
 BOOTSTRAP_HOST = "https://apig.inmoviebox.com"
 BOOTSTRAP_URL = f"{BOOTSTRAP_HOST}/wefeed-mobile-bff/tab/ranking-list?tabId=0&categoryType=4516404531735022304&page=1&perPage=1"
 
+MIN_STREAM_SEC = 60  # anything shorter is a placeholder/ad clip, not the title
+
 WEB_DOMAINS = [
     "https://123moviesfree.club",
     "https://movie-box.co",
@@ -456,6 +458,8 @@ class MovieBoxEngine:
         except Exception:
             pass
 
+        # The native API pads results with the same ~23s placeholder clip for every title.
+        streams = [s for s in streams if not (s.get("duration_sec") and s["duration_sec"] < MIN_STREAM_SEC)]
         streams.sort(key=lambda s: s["quality_value"], reverse=True)
         return streams
 
