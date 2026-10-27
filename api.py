@@ -204,8 +204,12 @@ class MovieBoxEngine:
         self.bearer_token: Optional[str] = None
         if cr:
             self.session = cr.Session(impersonate="chrome120")
+            # The native API doesn't need browser impersonation, and with it each new
+            # connection to api3/apig takes ~10s to establish (vs ~0.7s without).
+            self.native_session = cr.Session()
         else:
             self.session = httpx.Client(timeout=25, follow_redirects=True)
+            self.native_session = self.session
 
     @classmethod
     def get_instance(cls) -> "MovieBoxEngine":
@@ -217,7 +221,7 @@ class MovieBoxEngine:
         if self.bearer_token and not force:
             return self.bearer_token
         headers = build_auth_headers("GET", BOOTSTRAP_URL, device_id=self.device_id)
-        resp = self.session.get(BOOTSTRAP_URL, headers=headers, timeout=20)
+        resp = self.native_session.get(BOOTSTRAP_URL, headers=headers, timeout=20)
         x_user = resp.headers.get("x-user")
         if not x_user:
             raise HTTPException(status_code=502, detail="Failed to bootstrap MovieBox token")
@@ -245,9 +249,9 @@ class MovieBoxEngine:
         )
         data_bytes = body_str.encode("utf-8") if body_str is not None else None
         if method.upper() == "POST":
-            resp = self.session.post(full_url, headers=headers, data=data_bytes, timeout=25)
+            resp = self.native_session.post(full_url, headers=headers, data=data_bytes, timeout=25)
         else:
-            resp = self.session.get(full_url, headers=headers, timeout=25)
+            resp = self.native_session.get(full_url, headers=headers, timeout=25)
         if resp.status_code in (401, 441) and retry_auth:
             self.bootstrap_token(force=True)
             return self.api_request(method, path_or_url, body_dict, use_token, retry_auth=False)
