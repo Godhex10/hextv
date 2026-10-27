@@ -10,9 +10,11 @@ import time
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlsplit
 
-from fastapi import FastAPI, HTTPException, Query
+import httpx
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
+from starlette.background import BackgroundTask
 
 try:
     from curl_cffi import requests as cr
@@ -275,7 +277,9 @@ class MovieBoxEngine:
 
     def get_details(self, subject_id: str) -> Dict[str, Any]:
         url = f"/wefeed-mobile-bff/subject-api/get?subjectId={subject_id}"
-        data = self.api_request("GET", url).get("data", {})
+        data = self.api_request("GET", url).get("data")
+        if not data:
+            raise HTTPException(status_code=404, detail=f"No title found for subject_id {subject_id}")
         detail_url_str = data.get("detailUrl", "")
         detail_path = detail_url_str.split("/")[-1] if "/" in detail_url_str else detail_url_str
         return {
@@ -1050,10 +1054,11 @@ def search_suggest(q: str = Query(..., min_length=1)):
     suggestions = []
     for item in raw:
         sub = item.get("subject") or {}
+        sid = sub.get("subjectId") or item.get("subjectId")
         suggestions.append({
             "title": sub.get("title") or item.get("word") or item.get("title"),
             "slug": sub.get("detailPath") or item.get("detailPath"),
-            "subject_id": str(sub.get("subjectId") or item.get("subjectId"))
+            "subject_id": str(sid) if sid else None
         })
     return {"suggestions": suggestions}
 
@@ -1086,6 +1091,42 @@ def get_captions(subject_id: str, se: int = 0, ep: int = 0, stream_id: Optional[
         "count": len(subs),
         "captions": subs
     }
+
+# Browsers can't set Referer/Origin on <video> requests and the CDN answers 429 without them,
+# so media is relayed through here with the headers returned alongside each stream.
+PROXY_HOST_SUFFIXES = ("hakunaymatata.com", "aoneroom.com")
+PROXY_HEADER_KEYS = {"user-agent", "referer", "origin", "cookie"}
+PROXY_PASSTHROUGH = ("content-type", "content-length", "content-range", "accept-ranges", "content-encoding")
+
+@app.get("/proxy")
+async def proxy_stream(request: Request, url: str, h: Optional[str] = None):
+    parts = urlsplit(url)
+    host = (parts.hostname or "").lower()
+    if parts.scheme not in ("http", "https") or not any(host == s or host.endswith("." + s) for s in PROXY_HOST_SUFFIXES):
+        raise HTTPException(status_code=400, detail="Host not allowed")
+    headers = {}
+    if h:
+        try:
+            raw = json.loads(_b64decode(h).decode("utf-8"))
+            headers = {k: str(v) for k, v in raw.items() if k.lower() in PROXY_HEADER_KEYS}
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid headers parameter")
+    if "range" in request.headers:
+        headers["Range"] = request.headers["range"]
+
+    client = httpx.AsyncClient(follow_redirects=True, timeout=httpx.Timeout(30.0, read=None))
+    upstream = await client.send(client.build_request("GET", url, headers=headers), stream=True)
+
+    async def close():
+        await upstream.aclose()
+        await client.aclose()
+
+    return StreamingResponse(
+        upstream.aiter_raw(),
+        status_code=upstream.status_code,
+        headers={k: upstream.headers[k] for k in PROXY_PASSTHROUGH if k in upstream.headers},
+        background=BackgroundTask(close),
+    )
 
 @app.get("/movies")
 def get_movies(page: int = 1, per_page: int = 24, sort: str = "RECOMMEND"):
