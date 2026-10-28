@@ -11,6 +11,7 @@
 <!-- HLS.js — needed for .m3u8 streams on Chrome/Firefox/Android -->
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
 <script src="js/moviebox.js"></script>
+<script src="js/rooms.js"></script>
 
 <link rel="stylesheet" href="css/base.css">
 <link rel="stylesheet" href="css/room.css">
@@ -296,11 +297,14 @@ let isChannelReady = false;
 
 function initAbly() {
   try {
-    ablyClient = new Ably.Realtime({
-      authUrl: MB.API + '/ably/token',
-      authParams: { clientId: myClientId },
-      clientId: myClientId
-    });
+    // Our own room server when configured (no connection cap), otherwise Ably
+    ablyClient = MB.ROOMS
+      ? new RoomSocket({ url: MB.ROOMS, room: roomId, clientId: myClientId, name: myName, color: myColor })
+      : new Ably.Realtime({
+          authUrl: MB.API + '/ably/token',
+          authParams: { clientId: myClientId },
+          clientId: myClientId
+        });
 
     ablyClient.connection.on('connected', change => {
       console.log('[Ably] Connected ✅');
@@ -1004,7 +1008,7 @@ function addSystemMsg(text) {
 ══════════════════════════════════════════════ */
 function updateViewersUI() {
   const count     = viewers.size;
-  const viewerArr = Array.from(viewers.values());
+  const viewerArr = Array.from(viewers, ([id, v]) => ({ ...v, isMe: id === myClientId }));
   document.getElementById('onlineCount').textContent = count + ' online';
 
   // Topbar chips
@@ -1034,7 +1038,7 @@ function updateViewersUI() {
     row.innerHTML = `
       <div class="v-avatar" style="background:${v.color||'#555'}">${(v.name||'G').slice(0,2).toUpperCase()}</div>
       <div class="viewer-info">
-        <div class="viewer-name">${escapeHTML(v.name||'Guest')} ${v.name===myName?'(You)':''}</div>
+        <div class="viewer-name">${escapeHTML(v.name||'Guest')} ${v.isMe?'(You)':''}</div>
         <div class="viewer-status">Watching now</div>
       </div>
       ${i===0?'<span class="host-badge"><i class="fa-solid fa-crown"></i> Host</span>':'<div class="online-dot"></div>'}`;

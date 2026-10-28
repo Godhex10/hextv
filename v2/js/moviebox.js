@@ -6,6 +6,12 @@
   // same origin; from the stand-alone dev server on :5500 it's the local API.
   const API = location.port === '5500' || location.protocol === 'file:' ? 'http://localhost:8000' : location.origin;
 
+  // Where rooms connect: our own room server (room-server/ on Cloudflare), or '' to use Ably.
+  // ?rooms=ably or ?rooms=<ws url> on a page overrides it, for testing.
+  const ROOM_SERVER = '';
+  const roomsParam = new URLSearchParams(location.search).get('rooms');
+  const ROOMS = roomsParam === 'ably' ? '' : roomsParam || ROOM_SERVER;
+
   async function get(path) {
     const r = await fetch(API + path);
     const body = await r.json().catch(() => ({}));
@@ -53,5 +59,5 @@
     return 'room.html?' + p.toString();
   }
 
-  window.MB = { API, get, proxied, rankStreams, srtToVtt, roomUrl };
+  window.MB = { API, ROOMS, get, proxied, rankStreams, srtToVtt, roomUrl };
 })();
