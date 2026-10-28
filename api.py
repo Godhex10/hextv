@@ -1204,6 +1204,9 @@ def get_captions(subject_id: str, se: int = 0, ep: int = 0, stream_id: Optional[
 PROXY_HOST_SUFFIXES = ("hakunaymatata.com", "aoneroom.com")
 PROXY_HEADER_KEYS = {"user-agent", "referer", "origin", "cookie"}
 PROXY_PASSTHROUGH = ("content-type", "content-length", "content-range", "accept-ranges", "content-encoding")
+# Serverless hosts cap request time (~30s) and response size (~4.5MB), so there each media
+# response is one bounded chunk. A long-running server streams whole ranges instead.
+PROXY_CHUNK_BYTES = int(os.environ.get("PROXY_CHUNK_BYTES") or (4 * 1024 * 1024 if os.environ.get("VERCEL") else 0))
 
 @app.get("/proxy")
 async def proxy_stream(request: Request, url: str, h: Optional[str] = None):
@@ -1218,8 +1221,16 @@ async def proxy_stream(request: Request, url: str, h: Optional[str] = None):
             headers = {k: str(v) for k, v in raw.items() if k.lower() in PROXY_HEADER_KEYS}
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid headers parameter")
-    if "range" in request.headers:
-        headers["Range"] = request.headers["range"]
+    rng = request.headers.get("range")
+    if PROXY_CHUNK_BYTES:
+        # Answer at most one chunk per request; the player simply asks for the next range
+        m = re.fullmatch(r"bytes=(\d+)-(\d*)", rng or "bytes=0-")
+        if m:
+            start = int(m.group(1))
+            cap = start + PROXY_CHUNK_BYTES - 1
+            rng = f"bytes={start}-{min(int(m.group(2)), cap) if m.group(2) else cap}"
+    if rng:
+        headers["Range"] = rng
 
     client = _proxy_client()
     upstream = await client.send(client.build_request("GET", url, headers=headers), stream=True)
