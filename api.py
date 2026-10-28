@@ -307,7 +307,7 @@ class MovieBoxEngine:
         resp = self.native_session.get(BOOTSTRAP_URL, headers=headers, timeout=20)
         x_user = resp.headers.get("x-user")
         if not x_user:
-            raise HTTPException(status_code=502, detail="Failed to bootstrap MovieBox token")
+            raise HTTPException(status_code=502, detail=f"Failed to bootstrap MovieBox token (upstream HTTP {resp.status_code}: {resp.text[:120]})")
         token_data = json.loads(x_user)
         token = token_data.get("token")
         if not token:
