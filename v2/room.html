@@ -782,10 +782,65 @@ video.addEventListener('canplay', () => {
   seekCost = seekCost * 0.6 + Math.min(took, 10) * 0.4;
 });
 
+let playLag = 0.15;        // smoothed seconds from play() until the video actually moves, per device
+let playRequestedAt = 0;
+let catchUp = null;        // { since } while closing a small gap by speed
+let releaseTimer = null;   // precise end of a hold
+const hardSyncs = [];      // times of recent snaps, to notice a device that can't keep up
+
 function enginePlay() {
   holding = false;
   if (!video.paused) return;
+  playRequestedAt = performance.now();
   video.play().catch(() => { if (clock && clock.playing) showSyncPrompt(); });
+}
+video.addEventListener('playing', () => {
+  if (!playRequestedAt) return;
+  const lag = (performance.now() - playRequestedAt) / 1000;
+  playRequestedAt = 0;
+  if (lag < 3) playLag = playLag * 0.7 + lag * 0.3;
+});
+
+// True when `t` is already downloaded, so jumping there is instant
+function isBuffered(t) {
+  const b = video.buffered;
+  for (let i = 0; i < b.length; i++) if (b.start(i) <= t && b.end(i) >= t + 1) return true;
+  return false;
+}
+
+// Snap to the room: instantly if that part is loaded, otherwise jump ahead and let the room arrive
+function hardSync(exp) {
+  setRate(1);
+  catchUp = null;
+  if (isBuffered(exp + 0.1)) {
+    quietSeek(exp + 0.1);
+  } else {
+    enginePause(true);
+    quietSeek(exp + lead());
+  }
+  noteHardSync();
+}
+
+// Several snaps in a short time means this device can't keep up (slow decoder or network):
+// step down to a lighter version once, or suggest it
+function noteHardSync() {
+  const now = performance.now();
+  hardSyncs.push(now);
+  while (hardSyncs.length && now - hardSyncs[0] > 45000) hardSyncs.shift();
+  if (hardSyncs.length < 3) return;
+  hardSyncs.length = 0;
+  const height = s => s.quality_value || parseInt(s.quality, 10) || 0;
+  const cur = mediaStreams[streamIndex];
+  const lighter = cur && mediaStreams
+    .map((s, i) => ({ s, i }))
+    .filter(x => height(x.s) && height(x.s) < height(cur))
+    .sort((a, b) => height(b.s) - height(a.s))[0];
+  if (lighter) {
+    showToast(`Switched to ${lighter.s.quality} to keep up with the room`);
+    playStream(lighter.i, true);
+  } else {
+    showToast('This device is struggling to keep up — close other apps or tabs');
+  }
 }
 function enginePause(hold) {
   holding = hold;
@@ -801,21 +856,38 @@ function tick() {
       setRate(1);
       enginePause(false);
       if (Math.abs(drift) > 0.25) quietSeek(exp);
-    } else if (serverNow() < clock.at) {              // a scheduled restart hasn't come yet
+    } else if (serverNow() < clock.at - playLag * 1000) { // a scheduled restart hasn't come yet
       setRate(1);
       enginePause(true);
       if (Math.abs(video.currentTime - clock.time) > 0.25) quietSeek(clock.time);
-    } else if (drift < -2.5) {                        // far behind: jump ahead, let the room arrive
-      setRate(1);
+      const startsIn = clock.at - playLag * 1000 - serverNow();
+      if (startsIn < 300 && !releaseTimer) {
+        releaseTimer = setTimeout(() => { releaseTimer = null; if (holding) enginePlay(); }, startsIn);
+      }
+    } else if (drift > 1 || (holding && drift > playLag)) { // ahead (usually after a jump): wait,
+      setRate(1);                                       // starting early enough to land on time
+      catchUp = null;
       enginePause(true);
-      quietSeek(exp + lead());
-    } else if (drift > 0.6 || (holding && drift > 0.05)) { // ahead (usually after a jump): wait
-      setRate(1);
-      enginePause(true);
+      // The 250ms tick is too coarse to start on the beat; time the release exactly
+      if (drift - playLag < 0.3 && !releaseTimer) {
+        releaseTimer = setTimeout(() => { releaseTimer = null; if (holding) enginePlay(); }, (drift - playLag) * 1000);
+      }
+    } else if (drift < -1 && !document.hidden) {        // well behind: snap rather than race
+      hardSync(exp);
     } else {
       enginePlay();
-      // Catch up (or ease off) by speed; 1.25x closes a 1-2s gap in a few seconds
-      setRate(drift < -0.8 ? 1.25 : drift < -0.15 ? 1.1 : drift > 0.15 ? 0.92 : 1);
+      const off = Math.abs(drift);
+      if (document.hidden || off < 0.08) {
+        // In step — or a hidden tab the browser is throttling; it re-syncs when shown again
+        catchUp = null;
+        setRate(1);
+      } else if (catchUp || off > 0.25) {
+        // A small gap closes by playing slightly faster or slower; if the gap isn't
+        // shrinking (the device can't play faster), snap instead of racing forever
+        if (!catchUp) catchUp = { since: performance.now(), start: off };
+        if (performance.now() - catchUp.since > 6000 && off > catchUp.start * 0.6) hardSync(exp);
+        else setRate(drift < 0 ? 1.1 : 0.92);
+      }
     }
   }
   const busy = clock && clock.playing && !waitingForTap && videoLoaded &&
@@ -823,6 +895,7 @@ function tick() {
   document.getElementById('bufferSpin').hidden = !busy;
 }
 setInterval(tick, 250);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
 video.addEventListener('waiting', tick);
 video.addEventListener('canplay', tick);
 
