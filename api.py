@@ -8,6 +8,7 @@ import secrets
 import sys
 import threading
 import time
+import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlsplit
@@ -15,7 +16,7 @@ from urllib.parse import urlsplit
 import httpx
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from starlette.background import BackgroundTask
 
 try:
@@ -47,6 +48,43 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+class UnhandledErrorsAsJSON:
+    """Turn unhandled exceptions into a JSON 502 the browser can read.
+
+    Starlette's default 500 is produced outside the CORS middleware, so browsers block it and the
+    frontend only sees "Failed to fetch". Plain ASGI (not BaseHTTPMiddleware) so /proxy streaming
+    is passed through untouched.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        started = False
+
+        async def send_tracking(message):
+            nonlocal started
+            if message["type"] == "http.response.start":
+                started = True
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_tracking)
+        except Exception as e:
+            if started:
+                raise
+            traceback.print_exc()
+            response = JSONResponse(
+                {"detail": f"Upstream error: {type(e).__name__}: {e}"},
+                status_code=502,
+                headers={"Access-Control-Allow-Origin": "*"},
+            )
+            await response(scope, receive, send)
+
+app.add_middleware(UnhandledErrorsAsJSON)
 
 SECRET_KEY_DEFAULT_B64 = "NzZpUmwwN3MweFNOOWpxbUVXQXQ3OUVCSlp1bElRSXNWNjRGWnIyTw=="
 SECRET_KEY_ALT_B64 = "WHFuMm5uTzQxL0w5Mm8xaXVYaFNMSFRiWHZZNFo1Wlo2Mm04bVNMQQ=="
