@@ -1221,19 +1221,37 @@ async def proxy_stream(request: Request, url: str, h: Optional[str] = None):
     if "range" in request.headers:
         headers["Range"] = request.headers["range"]
 
-    client = httpx.AsyncClient(follow_redirects=True, timeout=httpx.Timeout(30.0, read=None))
+    client = _proxy_client()
     upstream = await client.send(client.build_request("GET", url, headers=headers), stream=True)
 
-    async def close():
-        await upstream.aclose()
-        await client.aclose()
+    async def body():
+        # Browsers abort and re-request ranges on every seek; release the pooled connection either way
+        try:
+            async for chunk in upstream.aiter_raw():
+                yield chunk
+        finally:
+            await upstream.aclose()
 
     return StreamingResponse(
-        upstream.aiter_raw(),
+        body(),
         status_code=upstream.status_code,
         headers={k: upstream.headers[k] for k in PROXY_PASSTHROUGH if k in upstream.headers},
-        background=BackgroundTask(close),
+        background=BackgroundTask(upstream.aclose),
     )
+
+# One pooled client for all media requests: a seek then reuses an open CDN connection
+# instead of paying for a new TLS handshake every time.
+_PROXY_CLIENT: Optional[httpx.AsyncClient] = None
+
+def _proxy_client() -> httpx.AsyncClient:
+    global _PROXY_CLIENT
+    if _PROXY_CLIENT is None:
+        _PROXY_CLIENT = httpx.AsyncClient(
+            follow_redirects=True,
+            timeout=httpx.Timeout(30.0, read=None),
+            limits=httpx.Limits(max_connections=64, max_keepalive_connections=16, keepalive_expiry=60),
+        )
+    return _PROXY_CLIENT
 
 @app.get("/movies")
 def get_movies(page: int = 1, per_page: int = 24, sort: str = "RECOMMEND"):
@@ -1350,6 +1368,31 @@ def ably_token(clientId: str = Query(..., min_length=1, max_length=80)):
     mac = base64.b64encode(hmac.new(key_secret.encode(), sign_text.encode(), hashlib.sha256).digest()).decode()
     return {"keyName": key_name, "ttl": ttl, "capability": capability, "clientId": clientId,
             "timestamp": timestamp, "nonce": nonce, "mac": mac}
+
+_public_url_cache: Dict[str, Any] = {"at": 0.0, "url": None}
+
+@app.get("/public-url")
+def public_url():
+    """The address friends can reach this server on, for invite links made on localhost.
+
+    PUBLIC_URL wins if set; otherwise ask a running Cloudflare quick tunnel, whose local
+    metrics server (ports 20241-20245 by default) reports the tunnel hostname.
+    """
+    if os.environ.get("PUBLIC_URL"):
+        return {"url": os.environ["PUBLIC_URL"].rstrip("/")}
+    if time.time() - _public_url_cache["at"] < 30:
+        return {"url": _public_url_cache["url"]}
+    found = None
+    for port in range(20241, 20246):
+        try:
+            host = httpx.get(f"http://127.0.0.1:{port}/quicktunnel", timeout=0.5).json().get("hostname")
+        except Exception:
+            continue
+        if host:
+            found = f"https://{host}"
+            break
+    _public_url_cache.update(at=time.time(), url=found)
+    return {"url": found}
 
 # Serve the watch-party site from this server too, so one public URL (e.g. a tunnel) covers both
 SITE_DIR = os.environ.get("SITE_DIR") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "streaming platform", "v2")
