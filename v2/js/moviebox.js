@@ -8,7 +8,7 @@
 
   // Where rooms connect: our own room server (room-server/ on Cloudflare), or '' to use Ably.
   // ?rooms=ably or ?rooms=<ws url> on a page overrides it, for testing.
-  const ROOM_SERVER = '';
+  const ROOM_SERVER = 'wss://streamtogether-rooms.streamtogether-rooms.workers.dev';
   const roomsParam = new URLSearchParams(location.search).get('rooms');
   const ROOMS = roomsParam === 'ably' ? '' : roomsParam || ROOM_SERVER;
 
