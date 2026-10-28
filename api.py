@@ -117,6 +117,14 @@ STREAM_CACHE_TTL = 300  # seconds; stream URLs are signed, so keep this short
 def _has_mp4(streams: List[Dict[str, Any]]) -> bool:
     return any(str(s.get("format", "")).upper() == "MP4" for s in streams)
 
+# The video CDN answers 429 to an aoneroom.com Referer (the API hosts) but accepts the
+# mirror sites, so playback headers always name a mirror site.
+PLAYBACK_SITE = "https://moviebox.ph"
+
+def playback_headers(domain: str) -> Dict[str, str]:
+    site = PLAYBACK_SITE if "aoneroom.com" in domain else domain
+    return {"User-Agent": "Mozilla/5.0", "Referer": f"{site}/", "Origin": site}
+
 WEB_DOMAINS = [
     "https://123moviesfree.club",
     "https://movie-box.co",
@@ -494,11 +502,7 @@ class MovieBoxEngine:
                 "size_mb": round(size_mb, 1),
                 "codec": st.get("codecName"),
                 "duration_sec": st.get("duration"),
-                "headers": {
-                    "User-Agent": "Mozilla/5.0",
-                    "Referer": f"{domain}/",
-                    "Origin": domain,
-                }
+                "headers": playback_headers(domain),
             })
 
         for d in data.get("dash", []):
@@ -519,11 +523,7 @@ class MovieBoxEngine:
                     "codec": "hevc/h264",
                     "duration_sec": None,
                     "cookie": cookie,
-                    "headers": {
-                        "User-Agent": "Mozilla/5.0",
-                        "Referer": f"{domain}/",
-                        "Origin": domain,
-                    }
+                    "headers": playback_headers(domain),
                 })
         return streams
 
