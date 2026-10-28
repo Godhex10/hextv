@@ -17,6 +17,7 @@ import httpx
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
 try:
@@ -35,6 +36,20 @@ if sys.stderr and hasattr(sys.stderr, "reconfigure"):
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass
+
+def _load_dotenv(path: str) -> None:
+    """Read KEY=value lines from a .env file without overriding real environment variables."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    os.environ.setdefault(k.strip(), v.strip().strip("\"'"))
+    except FileNotFoundError:
+        pass
+
+_load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
 app = FastAPI(
     title="MovieBox 1080p API",
@@ -1273,6 +1288,73 @@ def get_home():
     url = f"{API_BASE}/home?host=moviebox.ph"
     resp = engine.session.get(url, headers={"User-Agent": WEB_USER_AGENT, "Referer": "https://moviebox.ph/"}, timeout=20)
     return resp.json()
+
+# ── Watch-party site support ─────────────────────────────────────────────
+
+# Row titles from MovieBox carry decorative emoji ("🔥Hot Short TV"); the site renders icons instead
+EMOJI_RE = re.compile("[\U0001F000-\U0001FAFF☀-➿️‍]+")
+PLAYABLE_TYPES = {1: "movie", 2: "series"}
+HOME_CACHE_TTL = 600
+_home_cache: Dict[str, Any] = {}
+
+def _catalog_card(s: Dict[str, Any]) -> Dict[str, Any]:
+    cover = s.get("cover")
+    return {
+        "subject_id": str(s.get("subjectId")),
+        "title": EMOJI_RE.sub("", s.get("title") or "").strip(),
+        "type": PLAYABLE_TYPES[s.get("subjectType")],
+        "cover": cover.get("url") if isinstance(cover, dict) else None,
+        "year": (s.get("releaseDate") or "")[:4] or None,
+        "rating": s.get("imdbRatingValue") or None,
+        "detail_path": s.get("detailPath"),
+    }
+
+def _playable(s: Dict[str, Any]) -> bool:
+    # Music videos, short TV and "coming soon" entries have no full-length stream
+    return s.get("subjectType") in PLAYABLE_TYPES and s.get("hasResource") is not False and not s.get("isPornographic")
+
+@app.get("/catalog/home")
+def catalog_home():
+    """The MovieBox home feed as clean rows of movies and series."""
+    if _home_cache and time.time() - _home_cache["at"] < HOME_CACHE_TTL:
+        return _home_cache["data"]
+    data = get_home().get("data") or {}
+    rows = []
+    for op in data.get("operatingList") or []:
+        if op.get("type") != "SUBJECTS_MOVIE":
+            continue
+        title = EMOJI_RE.sub("", op.get("title") or "").strip()
+        items = [_catalog_card(s) for s in op.get("subjects") or [] if _playable(s)]
+        if title and items:
+            rows.append({"title": title, "items": items})
+    result = {"rows": rows}
+    if rows:
+        _home_cache.update(at=time.time(), data=result)
+    return result
+
+@app.get("/ably/token")
+def ably_token(clientId: str = Query(..., min_length=1, max_length=80)):
+    """Signed Ably token request, so the API key never reaches the browser.
+
+    Ably's client exchanges this for a one-hour token scoped to room channels.
+    """
+    key = os.environ.get("ABLY_API_KEY", "")
+    if ":" not in key:
+        raise HTTPException(status_code=503, detail="ABLY_API_KEY is not set on the server")
+    key_name, key_secret = key.split(":", 1)
+    ttl = 60 * 60 * 1000
+    capability = json.dumps({"room:*": ["publish", "subscribe", "presence"]}, separators=(",", ":"))
+    timestamp = int(time.time() * 1000)
+    nonce = secrets.token_hex(16)
+    sign_text = "\n".join([key_name, str(ttl), capability, clientId, str(timestamp), nonce]) + "\n"
+    mac = base64.b64encode(hmac.new(key_secret.encode(), sign_text.encode(), hashlib.sha256).digest()).decode()
+    return {"keyName": key_name, "ttl": ttl, "capability": capability, "clientId": clientId,
+            "timestamp": timestamp, "nonce": nonce, "mac": mac}
+
+# Serve the watch-party site from this server too, so one public URL (e.g. a tunnel) covers both
+SITE_DIR = os.environ.get("SITE_DIR") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "streaming platform", "v2")
+if os.path.isdir(SITE_DIR):
+    app.mount("/app", StaticFiles(directory=SITE_DIR, html=True), name="site")
 
 if __name__ == "__main__":
     import uvicorn
