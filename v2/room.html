@@ -1,0 +1,1232 @@
+<!-- room.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StreamTogether — Watch Party</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css" integrity="sha512-2SwdPD6INVrV/lHTZbO2nodKhrnDdJK9/kg2XD1r9uGqPo1cUbujc+IYdlYdEErWNu69gVcYgdxlmVmzTWnetw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+<script src="https://cdn.ably.com/lib/ably.min-2.js"></script>
+<!-- HLS.js — needed for .m3u8 streams on Chrome/Firefox/Android -->
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
+<script src="js/moviebox.js"></script>
+
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/room.css">
+</head>
+<body data-cursor="off">
+
+<div class="topbar">
+  <a class="logo-sm brand" href="index.html">
+    <span class="brand-mark"><i class="fa-solid fa-play"></i></span>
+    <span class="logo-text-full brand-text">Stream<span>Together</span></span>
+  </a>
+  <div class="topbar-divider"></div>
+  <div class="room-info">
+    <div class="room-title-wrapper">
+      <span class="room-name" id="roomNameDisplay">Movie Night</span>
+      <span class="live-badge"><span class="pulse-dot"></span>LIVE</span>
+    </div>
+    <span class="room-meta" id="roomIdDisplay">Room: loading…</span>
+  </div>
+  <div class="topbar-right">
+    <div class="viewer-stack" id="viewerStack" aria-label="Current viewers"></div>
+    <a class="btn-icon" href="library.html" title="Back to Library" aria-label="Back to Library"><i class="fa-solid fa-film"></i></a>
+    <button class="btn-icon" id="settingsBtn" title="Settings" aria-label="Settings"><i class="fa-solid fa-gear"></i></button>
+    <button class="btn-share" id="shareBtn" aria-label="Share room">
+      <span class="share-icon"><i class="fa-solid fa-user-plus"></i></span><span class="share-text"> Invite</span>
+    </button>
+  </div>
+</div>
+
+<button id="mobileChatBubble" class="mobile-chat-bubble" aria-label="Toggle chat room">
+  <i class="fa-solid fa-comment-dots"></i>
+  <span id="chatNotificationBadge" class="notification-badge"></span>
+</button>
+
+<audio id="chatNotificationSound" src="./not1.mp3" preload="auto"></audio>
+
+<div class="main">
+
+  <div class="video-col">
+    <div class="player-wrap">
+
+      <!-- Hide url-overlay immediately if stream URL is in params (before JS runs) -->
+      <script>
+        if (/[?&](stream|mb)=/.test(location.search)) {
+          document.write('<style>#urlOverlay{display:none!important}</style>');
+        }
+      </script>
+
+      <!-- Sync prompt: shown to people who join mid-movie, or when the browser blocks autoplay -->
+      <div id="syncOverlay" onclick="dismissSyncOverlay()" role="button" tabindex="0" aria-live="polite">
+        <div class="sync-play-icon"><i class="fa-solid fa-play"></i></div>
+        <p id="syncTitle">Sync to the Room</p>
+        <small id="syncDetail">Click to join playback already in progress</small>
+      </div>
+
+      <!-- Stream lookup progress / errors for library titles -->
+      <div class="media-status" id="mediaStatus" hidden>
+        <div class="media-spinner" id="mediaSpinner" aria-hidden="true"></div>
+        <p id="mediaStatusText">Finding the best stream…</p>
+        <button class="btn-retry" id="mediaRetry" hidden><i class="fa-solid fa-rotate-right"></i> Try again</button>
+      </div>
+
+      <!-- Per-viewer quality and subtitle choices (not shared with the room) -->
+      <div class="player-menu" id="playerMenu" hidden>
+        <div class="menu-section">
+          <h4><i class="fa-solid fa-sliders"></i> Quality</h4>
+          <div class="menu-opts" id="qualityList"></div>
+        </div>
+        <div class="menu-section">
+          <h4><i class="fa-solid fa-closed-captioning"></i> Subtitles</h4>
+          <div class="menu-opts menu-scroll" id="subtitleList"></div>
+        </div>
+      </div>
+
+      <div class="url-overlay" id="urlOverlay">
+        <div class="url-overlay-glow" aria-hidden="true"></div>
+        <div class="url-overlay-icon"><i class="fa-solid fa-film"></i></div>
+        <h2>Load a Video</h2>
+        <p>Paste a direct video URL (.mp4 or any direct link) to start your watch party. Everyone in the room will see it.</p>
+        <div class="url-input-row">
+          <div class="url-field">
+            <i class="fa-solid fa-link" aria-hidden="true"></i>
+            <input type="url" class="url-input" id="videoUrlInput" placeholder="https://example.com/movie.mp4" autocomplete="off" aria-label="Video URL">
+            <button class="btn-load" id="loadVideoBtn"><i class="fa-solid fa-bolt"></i> Load</button>
+          </div>
+          <div class="url-extras">
+            <button type="button" class="sample-chip" data-sample="https://media.w3.org/2010/05/sintel/trailer.mp4"><i class="fa-solid fa-wand-magic-sparkles"></i> Try a sample video</button>
+            <a class="sample-chip" href="library.html"><i class="fa-solid fa-film"></i> Browse the library</a>
+            <a class="sample-chip" href="how-to.html"><i class="fa-regular fa-circle-question"></i> How to get a link</a>
+          </div>
+        </div>
+      </div>
+
+      <video id="videoPlayer" preload="auto" playsinline webkit-playsinline class="video-hidden" aria-label="Watch party video player"></video>
+      <div class="buffer-spin" id="bufferSpin" hidden aria-hidden="true"></div>
+    </div>
+
+    <div class="controls-bar">
+      <button class="ctrl ctrl-main" id="playPauseBtn" title="Play / Pause" aria-label="Play or Pause">
+        <i id="playIcon" class="fa-solid fa-play"></i>
+      </button>
+
+      <button class="ctrl" title="Rewind 10s" aria-label="Rewind 10 seconds" onclick="skipVideo(-10)">
+        <i class="fa-solid fa-rotate-left"></i><small>10</small>
+      </button>
+
+      <button class="ctrl" title="Forward 10s" aria-label="Forward 10 seconds" onclick="skipVideo(10)">
+        <i class="fa-solid fa-rotate-right"></i><small>10</small>
+      </button>
+
+      <div class="progress-area">
+        <span class="time-label" id="currentTime">0:00</span>
+        <div class="progress-track" id="progressTrack" role="slider" aria-label="Video progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div class="progress-buffer" id="progressBuffer"></div>
+          <div class="progress-fill-bar" id="progressFill"></div>
+          <span class="scrub-tip" id="scrubTip"></span>
+        </div>
+        <span class="time-label" id="duration">0:00</span>
+      </div>
+
+      <div class="volume-group">
+        <button class="ctrl" id="muteBtn" title="Mute" aria-label="Toggle mute"><i class="fa-solid fa-volume-high"></i></button>
+        <input type="range" class="vol-slider" id="volSlider" min="0" max="1" step="0.05" value="1" aria-label="Volume">
+      </div>
+
+      <button class="sync-badge" id="syncBtn" title="Jump to where everyone else is">
+        <span class="sync-dot"></span>
+        <span class="sync-text">Sync</span>
+      </button>
+
+      <button class="ctrl" id="ccBtn" title="Quality and subtitles" aria-label="Quality and subtitles"><i class="fa-solid fa-closed-captioning"></i></button>
+
+      <button class="ctrl" id="fullscreenBtn" title="Fullscreen" aria-label="Toggle fullscreen"><i class="fa-solid fa-expand"></i></button>
+    </div>
+  </div>
+
+  <div class="chat-backdrop" id="chatBackdrop"></div>
+  <div class="chat-sidebar" id="chatSidebar">
+    <div class="chat-grip" aria-hidden="true"></div>
+    <div class="chat-header">
+      <div class="chat-tabs" role="tablist">
+        <button class="chat-tab active" role="tab" aria-selected="true" data-tab="chat" id="chatTabButton">
+          <i class="fa-regular fa-comments"></i> Chat <span id="tabNotificationBadge" class="tab-badge">0</span>
+        </button>
+        <button class="chat-tab" role="tab" aria-selected="false" data-tab="viewers"><i class="fa-solid fa-user-group"></i> Viewers</button>
+      </div>
+      <span class="online-count" id="onlineCount">1 online</span>
+    </div>
+
+    <div class="tab-panel active" id="chatPanel" role="tabpanel">
+      <div class="messages-list" id="messagesList" aria-live="polite" aria-label="Chat messages">
+        <div class="system-msg"><span><i class="fa-solid fa-champagne-glasses"></i> Welcome to the room</span></div>
+        <div class="system-msg" id="pasteHint"><span>Paste a video URL on the left to start watching</span></div>
+      </div>
+
+      <div class="reactions-bar" aria-label="Quick reactions">
+        <button class="reaction-btn" title="Fire" aria-label="Fire reaction" data-emoji="🔥"><i class="fa-solid fa-fire rx rx-fire"></i></button>
+        <button class="reaction-btn" title="Laugh" aria-label="Laugh reaction" data-emoji="😂"><i class="fa-solid fa-face-laugh-squint rx rx-laugh"></i></button>
+        <button class="reaction-btn" title="Shocked" aria-label="Shocked reaction" data-emoji="😱"><i class="fa-solid fa-face-surprise rx rx-surprise"></i></button>
+        <button class="reaction-btn" title="Love" aria-label="Love reaction" data-emoji="❤️"><i class="fa-solid fa-heart rx rx-heart"></i></button>
+        <button class="reaction-btn" title="Clap" aria-label="Clap reaction" data-emoji="👏"><i class="fa-solid fa-hands-clapping rx rx-clap"></i></button>
+        <button class="reaction-btn" title="Mind blown" aria-label="Mind blown reaction" data-emoji="🤯"><i class="fa-solid fa-explosion rx rx-wow"></i></button>
+      </div>
+
+      <div class="chat-input-area">
+        <div class="chat-name-row">
+          <i class="fa-regular fa-user" aria-hidden="true"></i>
+          <input type="text" class="name-input" id="usernameInput" placeholder="Your name…" maxlength="20" aria-label="Your name">
+        </div>
+        <div class="msg-input-row">
+          <textarea class="msg-input" id="msgInput" placeholder="Say something…" rows="1" maxlength="300" aria-label="Type a message"></textarea>
+          <button class="send-btn" id="sendBtn" aria-label="Send message"><i class="fa-solid fa-paper-plane"></i></button>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="viewersPanel" role="tabpanel">
+      <div class="viewers-list" id="viewersList" aria-label="List of viewers in room"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="shareModal" role="dialog" aria-modal="true" aria-labelledby="shareTitle">
+  <div class="modal">
+    <div class="modal-ic"><i class="fa-solid fa-user-plus"></i></div>
+    <h3 id="shareTitle">Invite Friends</h3>
+    <p>Share this link — anyone with it can join your watch party instantly.</p>
+    <div class="copy-row">
+      <i class="fa-solid fa-link" aria-hidden="true"></i>
+      <span class="copy-url" id="shareUrl">loading…</span>
+      <button class="btn-copy" id="copyLinkBtn"><i class="fa-regular fa-copy"></i> Copy</button>
+    </div>
+    <button class="modal-close" id="closeModalBtn">Close</button>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+/* ══════════════════════════════════════════════
+    ABLY CONFIG
+══════════════════════════════════════════════ */
+// No key in the page: the API signs short-lived Ably tokens (GET /ably/token)
+const myClientId = 'u_' + Math.random().toString(36).slice(2, 10);
+
+/* ══════════════════════════════════════════════
+    ROOM SETUP
+══════════════════════════════════════════════ */
+const params       = new URLSearchParams(location.search);
+let roomId         = params.get('room');
+if (!roomId) {
+  roomId = 'room_' + Math.random().toString(36).slice(2, 9);
+  const newUrl = new URL(location.href);
+  newUrl.searchParams.set('room', roomId);
+  history.replaceState({}, '', newUrl.toString());
+}
+// Guard against a double-encoded stream URL. If one decode still leaves
+// percent-escapes on the scheme, the browser would treat it as a relative
+// path and 404 against our own domain.
+function safeStreamParam(raw) {
+  if (!raw) return raw;
+  let u = raw;
+  for (let i = 0; i < 3; i++) {
+    if (/^(https?|magnet):/i.test(u)) break;   // already a usable absolute URL
+    try {
+      const dec = decodeURIComponent(u);
+      if (dec === u) break;
+      u = dec;
+    } catch (e) { break; }
+  }
+  if (!/^(https?|magnet):/i.test(u)) {
+    console.error('[room] stream param is not an absolute URL:', raw);
+  }
+  return u;
+}
+
+const directStreamUrl = safeStreamParam(params.get('stream'));
+const directTitle     = params.get('title');
+if (directTitle) document.getElementById('roomNameDisplay').textContent = directTitle;
+
+// What the link says to watch: a MovieBox title (mb/se/ep) or a pasted direct URL
+const linkMedia = params.get('mb')
+  ? { mb: params.get('mb'), se: Number(params.get('se')) || 0, ep: Number(params.get('ep')) || 0, title: directTitle || '' }
+  : directStreamUrl ? { url: directStreamUrl, title: directTitle || '' } : null;
+
+let myName  = localStorage.getItem('st_username') || 'Guest_' + Math.floor(Math.random() * 900 + 100);
+let myColor = localStorage.getItem('st_color')    || randomColor();
+let isSyncingFromRemote = false;
+let videoLoaded         = false;
+let hasPlayedOnce       = false;
+let unreadCount         = 0;
+let inSync              = false; // true once we're following the room (and may describe it to newcomers)
+let suppressSeek        = false; // swallow the 'seeked' caused by our own programmatic seeks
+
+const viewers = new Map();
+
+document.getElementById('roomIdDisplay').textContent = 'Room: ' + roomId;
+// Invite links must work for friends: when the host watches on localhost (keeping their
+// upload free for guests), swap in the public tunnel address the API reports.
+let publicBase = null;
+const inviteLink = () => (publicBase || location.origin) + location.pathname + location.search;
+const showInviteLink = () => { document.getElementById('shareUrl').textContent = inviteLink(); };
+if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
+  MB.get('/public-url').then(d => { publicBase = d.url; showInviteLink(); }).catch(() => {});
+}
+showInviteLink();
+
+const usernameInput = document.getElementById('usernameInput');
+usernameInput.value = myName;
+usernameInput.addEventListener('change', () => {
+  myName = usernameInput.value.trim() || 'Guest_' + Math.floor(Math.random() * 900 + 100);
+  usernameInput.value = myName;
+  localStorage.setItem('st_username', myName);
+  publishPresence('update');
+});
+
+/* ══════════════════════════════════════════════
+    ABLY CLIENT
+══════════════════════════════════════════════ */
+let ablyClient     = null;
+let channel        = null;
+let isChannelReady = false;
+
+function initAbly() {
+  try {
+    ablyClient = new Ably.Realtime({
+      authUrl: MB.API + '/ably/token',
+      authParams: { clientId: myClientId },
+      clientId: myClientId
+    });
+
+    ablyClient.connection.on('connected', change => {
+      console.log('[Ably] Connected ✅');
+      const firstConnect = !isChannelReady && !joinedOnce;
+      isChannelReady = true;
+      measureClockOffset();
+      publishPresence();
+      if (firstConnect) {
+        joinedOnce = true;
+        showToast('Connected to room');
+        requestState({ initial: true });
+      } else if (!change || !change.resumed) {
+        // Back after a long drop: Ably couldn't replay what we missed, so ask the room where it is
+        showToast('Reconnected — syncing with the room');
+        requestState({ silent: true });
+      } else {
+        showToast('Reconnected');
+      }
+    });
+    ablyClient.connection.on('disconnected', () => {
+      isChannelReady = false;
+      showToast('Connection lost — reconnecting…');
+    });
+    ablyClient.connection.on('failed', () => {
+      isChannelReady = false;
+      showToast('Could not connect to room');
+      if (!joinedOnce) { joinedOnce = true; startAlone(); }
+    });
+
+    channel = ablyClient.channels.get('room:' + roomId);
+
+    // Video sync — ignore own messages
+    channel.subscribe('video_sync', (msg) => {
+      if (msg.clientId === ablyClient.auth.clientId) return;
+      handleRemoteSync(msg.data, msg);
+    });
+
+    // Chat messages
+    channel.subscribe('chat_message', (msg) => {
+      if (msg.clientId === ablyClient.auth.clientId) return;
+      renderMessage(msg.data, false);
+      handleUnreadBadge();
+      playChatSound();
+    });
+
+    // Reactions
+    channel.subscribe('reaction', (msg) => {
+      if (msg.clientId === ablyClient.auth.clientId) return;
+      spawnFloatingReaction(msg.data.emoji);
+    });
+
+    // Presence — Ably tracks who's here, including people whose tab closed
+    channel.presence.subscribe(msg => {
+      if (msg.clientId !== myClientId) {
+        const name = (msg.data && msg.data.name) || 'Someone';
+        if (msg.action === 'enter') addSystemMsg(name + ' joined the party');
+        if (msg.action === 'leave') addSystemMsg(name + ' left the room');
+      }
+      refreshViewers();
+    });
+
+  } catch (e) {
+    console.error('[Ably] Init failed:', e);
+    showToast('Ably init failed — check API key');
+  }
+}
+
+let joinedOnce = false;
+
+// Enters presence the first time, updates our name/colour after that
+function publishPresence() {
+  if (!channel || !isChannelReady) return;
+  channel.presence.update({ name: myName, color: myColor })
+    .then(refreshViewers)
+    .catch(e => console.warn('[Ably] presence failed', e));
+}
+
+// Rebuild the viewer list from Ably's presence set, longest-present (the host) first
+function refreshViewers() {
+  channel.presence.get().then(members => {
+    viewers.clear();
+    members.sort((a, b) => a.timestamp - b.timestamp)
+      .forEach(m => viewers.set(m.clientId, { name: (m.data && m.data.name) || 'Guest', color: (m.data && m.data.color) || '#555' }));
+    updateViewersUI();
+  }).catch(() => {});
+}
+
+/* ══════════════════════════════════════════════
+    VIDEO PLAYER
+══════════════════════════════════════════════ */
+const video         = document.getElementById('videoPlayer');
+const urlOverlay    = document.getElementById('urlOverlay');
+const urlInput      = document.getElementById('videoUrlInput');
+const progressFill  = document.getElementById('progressFill');
+const progressTrack = document.getElementById('progressTrack');
+const currentTimeEl = document.getElementById('currentTime');
+const durationEl    = document.getElementById('duration');
+const playPauseBtn  = document.getElementById('playPauseBtn');
+const muteBtn       = document.getElementById('muteBtn');
+const volSlider     = document.getElementById('volSlider');
+
+document.getElementById('loadVideoBtn').addEventListener('click', loadVideo);
+urlInput.addEventListener('keydown', e => { if (e.key === 'Enter') loadVideo(); });
+
+function loadVideo() {
+  const url = urlInput.value.trim();
+  if (!url) return;
+  const media = { url, title: document.getElementById('roomNameDisplay').textContent };
+  loadMedia(media);
+  setClock({ playing: false, time: 0, at: serverNow() });
+  addSystemMsg('Video loaded — press play to start');
+  broadcastSync({ type: 'load', media, src: url, title: media.title });
+}
+
+/* Every user action goes through userPlay / userPause / userSeek, which move
+   the shared room clock and tell everyone. Video element events never
+   broadcast, so the sync engine can play, pause and seek freely. */
+video.addEventListener('timeupdate', updateProgress);
+video.addEventListener('progress', updateBuffered);
+video.addEventListener('loadedmetadata', () => {
+  durationEl.textContent = fmtTime(video.duration);
+});
+video.addEventListener('play', updatePlayIcon);
+video.addEventListener('pause', updatePlayIcon);
+
+function updatePlayIcon() {
+  const playing = clock ? clock.playing : !video.paused;
+  document.getElementById('playIcon').className = playing ? 'fa-solid fa-pause' : 'fa-solid fa-play';
+}
+
+function togglePlay() {
+  if (!videoLoaded) return;
+  (clock ? clock.playing : !video.paused) ? userPause() : userPlay();
+}
+playPauseBtn.addEventListener('click', togglePlay);
+video.addEventListener('click', togglePlay);
+video.addEventListener('dblclick', () => document.getElementById('fullscreenBtn').click());
+
+function skipVideo(sec) {
+  if (!videoLoaded) return;
+  userSeek(Math.max(0, (clock ? expectedPos() : video.currentTime) + sec));
+}
+
+// Drag to seek: the bar previews while dragging and the room seeks once, on release
+const scrubTip = document.getElementById('scrubTip');
+let scrubbing = false;
+const scrubFraction = e => {
+  const r = progressTrack.getBoundingClientRect();
+  return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+};
+function previewScrub(e) {
+  const f = scrubFraction(e);
+  scrubTip.textContent = fmtTime(f * video.duration);
+  scrubTip.style.left = f * 100 + '%';
+  scrubTip.classList.add('show');
+  if (scrubbing) {
+    progressFill.style.width = f * 100 + '%';
+    currentTimeEl.textContent = fmtTime(f * video.duration);
+  }
+}
+progressTrack.addEventListener('pointerdown', e => {
+  if (!videoLoaded || !video.duration) return;
+  scrubbing = true;
+  progressTrack.setPointerCapture(e.pointerId);
+  progressTrack.classList.add('scrubbing');
+  previewScrub(e);
+});
+progressTrack.addEventListener('pointermove', e => { if (video.duration) previewScrub(e); });
+progressTrack.addEventListener('pointerup', e => {
+  if (!scrubbing) return;
+  scrubbing = false;
+  progressTrack.classList.remove('scrubbing');
+  scrubTip.classList.remove('show');
+  userSeek(scrubFraction(e) * video.duration);
+});
+progressTrack.addEventListener('pointercancel', () => { scrubbing = false; progressTrack.classList.remove('scrubbing'); });
+progressTrack.addEventListener('pointerleave', () => { if (!scrubbing) scrubTip.classList.remove('show'); });
+
+function updateBuffered() {
+  if (!video.duration) return;
+  const b = video.buffered, t = video.currentTime;
+  for (let i = 0; i < b.length; i++) {
+    if (b.start(i) <= t + 0.5 && b.end(i) >= t) {
+      document.getElementById('progressBuffer').style.width = (b.end(i) / video.duration) * 100 + '%';
+      return;
+    }
+  }
+  document.getElementById('progressBuffer').style.width = '0%';
+}
+
+function updateProgress() {
+  if (!video.duration || scrubbing) return;
+  const pct = (video.currentTime / video.duration) * 100;
+  progressFill.style.width = pct + '%';
+  progressTrack.setAttribute('aria-valuenow', Math.round(pct));
+  currentTimeEl.textContent = fmtTime(video.currentTime);
+}
+
+muteBtn.addEventListener('click', () => {
+  video.muted = !video.muted;
+  muteBtn.innerHTML = video.muted ? '<i class="fa-solid fa-volume-xmark"></i>' : '<i class="fa-solid fa-volume-high"></i>';
+});
+volSlider.addEventListener('input', () => {
+  video.volume = volSlider.value;
+  muteBtn.innerHTML = video.volume == 0 ? '<i class="fa-solid fa-volume-xmark"></i>' : '<i class="fa-solid fa-volume-high"></i>';
+});
+
+document.getElementById('fullscreenBtn').addEventListener('click', () => {
+  const pw = document.querySelector('.video-col'); // keeps our controls bar in fullscreen
+  if (document.fullscreenElement) document.exitFullscreen?.();
+  else if (pw.requestFullscreen) pw.requestFullscreen();
+  else video.webkitEnterFullscreen?.(); // iPhone Safari only allows the video itself fullscreen
+});
+
+/* ══════════════════════════════════════════════
+    VIDEO SOURCE SETUP — handles MP4 + HLS
+══════════════════════════════════════════════ */
+let hlsInstance = null;
+
+function setupVideoSource(url, quiet) {
+  if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
+
+  video.classList.remove('video-hidden');
+  urlOverlay.style.display = 'none';
+  videoLoaded  = true;
+  hasPlayedOnce = false;
+
+  const isHLS  = url.includes('.m3u8');
+  const isHEVC = /x265|h265|hevc/i.test(url);
+
+  if (isHLS && typeof Hls !== 'undefined' && Hls.isSupported()) {
+    hlsInstance = new Hls({ enableWorker: true });
+    hlsInstance.loadSource(url);
+    hlsInstance.attachMedia(video);
+    hlsInstance.on(Hls.Events.ERROR, (_, data) => {
+      if (data.fatal) addSystemMsg('HLS stream error — try a different stream');
+    });
+    showToast('HLS stream loaded — press play!');
+  } else if (isHLS && video.canPlayType('application/vnd.apple.mpegurl')) {
+    video.src = url; video.load();
+    showToast('HLS stream loaded — press play!');
+  } else {
+    video.src = url; video.load();
+    if (isHEVC) {
+      showToast('H.265 stream — may show black on some devices');
+      addSystemMsg('H.265 codec detected — if you see black screen pick an x264 stream');
+    } else if (!quiet) {
+      showToast('Stream loaded');
+    }
+  }
+}
+
+/* ══════════════════════════════════════════════
+    MEDIA — what the room is watching
+══════════════════════════════════════════════ */
+let currentMedia = null;  // { mb, se, ep, title } for library titles, { url, title } for pasted links
+let mediaReady   = null;  // resolves once the current media's video source is set
+let mediaToken   = 0;     // drops stale lookups when the media changes mid-request
+let mediaStreams = [];    // ranked MP4 versions of the current library title
+let streamIndex  = 0;
+let subtitles    = [];
+let activeSub    = -1;
+
+const mediaStatus = document.getElementById('mediaStatus');
+const sameMedia = (a, b) => !!a && !!b &&
+  (a.mb ? a.mb === b.mb && (a.se || 0) === (b.se || 0) && (a.ep || 0) === (b.ep || 0) : a.url === b.url);
+
+function loadMedia(media) {
+  if (mediaReady && sameMedia(media, currentMedia)) return mediaReady;
+  currentMedia = media;
+  const token = ++mediaToken;
+  document.getElementById('pasteHint')?.remove();
+  if (media.title) document.getElementById('roomNameDisplay').textContent = media.title;
+  // Keep the address bar (and so the invite link) pointing at what's playing
+  history.replaceState(null, '', MB.roomUrl(media, roomId));
+  showInviteLink();
+  mediaReady = media.mb ? resolveLibraryTitle(media, token) : Promise.resolve(setupVideoSource(media.url));
+  mediaReady.catch(() => { if (token === mediaToken) mediaReady = null; });
+  return mediaReady;
+}
+
+async function resolveLibraryTitle(media, token) {
+  urlOverlay.style.display = 'none';
+  showMediaStatus('Finding the best stream…');
+  video.querySelectorAll('track').forEach(t => t.remove());
+  activeSub = -1;
+  const q = `?se=${media.se || 0}&ep=${media.ep || 0}`;
+  try {
+    const [res, caps] = await Promise.all([
+      MB.get(`/api/stream/${encodeURIComponent(media.mb)}${q}`),
+      MB.get(`/api/stream/${encodeURIComponent(media.mb)}/captions${q}`).catch(() => ({ captions: [] }))
+    ]);
+    if (token !== mediaToken) return;
+    mediaStreams = MB.rankStreams(res.streams);
+    if (!mediaStreams.length) throw new Error('No playable version of this title was found.');
+    subtitles = (caps.captions || []).sort((a, b) => (b.code === 'en') - (a.code === 'en'));
+    renderSubtitleMenu();
+    playStream(0, false);
+    hideMediaStatus();
+  } catch (e) {
+    if (token === mediaToken) showMediaStatus(e.message, true);
+    throw e;
+  }
+}
+
+// Switch to one of the title's versions; with keep=true the position and play state carry over
+function playStream(i, keep) {
+  const resume = keep ? { time: video.currentTime, paused: video.paused } : null;
+  streamIndex = i;
+  setupVideoSource(MB.proxied(mediaStreams[i]), keep);
+  renderQualityMenu();
+  if (!resume) return;
+  video.addEventListener('loadedmetadata', () => {
+    quietSeek(clock ? expectedPos() : resume.time);
+    if (activeSub >= 0) showSubtitleTrack();
+    tick();
+  }, { once: true });
+}
+
+// A version that fails (expired link, rate limit, bad file) falls through to the next one
+video.addEventListener('error', () => {
+  if (!currentMedia || !currentMedia.mb || !video.getAttribute('src')) return;
+  if (streamIndex + 1 < mediaStreams.length) {
+    showToast('That version failed — trying another');
+    playStream(streamIndex + 1, true);
+  } else {
+    showMediaStatus('The video server refused every version of this title. It may be busy — try again in a few minutes.', true);
+  }
+});
+
+function showMediaStatus(text, isError) {
+  mediaStatus.hidden = false;
+  mediaStatus.classList.toggle('error', !!isError);
+  document.getElementById('mediaStatusText').textContent = text;
+  document.getElementById('mediaRetry').hidden = !isError;
+}
+function hideMediaStatus() { mediaStatus.hidden = true; }
+
+document.getElementById('mediaRetry').addEventListener('click', () => {
+  const media = currentMedia;
+  mediaReady = null;
+  loadMedia(media).catch(() => {});
+});
+
+/* ══════════════════════════════════════════════
+    QUALITY + SUBTITLES (each viewer picks their own)
+══════════════════════════════════════════════ */
+const playerMenu = document.getElementById('playerMenu');
+
+function renderQualityMenu() {
+  const list = document.getElementById('qualityList');
+  if (!currentMedia || !currentMedia.mb) { list.innerHTML = '<p class="menu-empty">Only for library titles</p>'; return; }
+  list.innerHTML = mediaStreams.map((st, i) => {
+    const size = st.size_mb ? (st.size_mb >= 1024 ? (st.size_mb / 1024).toFixed(1) + ' GB' : Math.round(st.size_mb) + ' MB') : '';
+    return `<button class="menu-opt${i === streamIndex ? ' active' : ''}" data-q="${i}">${escapeHTML(st.quality || 'Auto')}${size ? `<small>${size}</small>` : ''}</button>`;
+  }).join('');
+}
+
+function renderSubtitleMenu() {
+  const list = document.getElementById('subtitleList');
+  list.innerHTML = `<button class="menu-opt${activeSub < 0 ? ' active' : ''}" data-sub="-1">Off</button>` +
+    subtitles.map((c, i) => `<button class="menu-opt${i === activeSub ? ' active' : ''}" data-sub="${i}">${escapeHTML(c.language || c.code || 'Subtitle')}</button>`).join('');
+}
+
+playerMenu.addEventListener('click', e => {
+  const q = e.target.closest('[data-q]');
+  const sub = e.target.closest('[data-sub]');
+  if (q && Number(q.dataset.q) !== streamIndex) playStream(Number(q.dataset.q), true);
+  if (sub) setSubtitle(Number(sub.dataset.sub));
+});
+
+async function setSubtitle(i) {
+  video.querySelectorAll('track').forEach(t => t.remove());
+  activeSub = i;
+  renderSubtitleMenu();
+  if (i < 0) return;
+  const cap = subtitles[i];
+  let src = cap.url;
+  try {
+    const text = await (await fetch(cap.url)).text();
+    src = URL.createObjectURL(new Blob([MB.srtToVtt(text)], { type: 'text/vtt' }));
+  } catch (e) { /* fall back to letting the browser fetch it */ }
+  if (activeSub !== i) return;
+  const track = Object.assign(document.createElement('track'),
+    { kind: 'subtitles', label: cap.language || 'Subtitles', srclang: cap.code || 'en', src, default: true });
+  video.appendChild(track);
+  showSubtitleTrack();
+}
+
+function showSubtitleTrack() {
+  setTimeout(() => { for (const t of video.textTracks) t.mode = 'showing'; }, 80);
+}
+
+function toggleMenu(force) {
+  playerMenu.hidden = force === undefined ? !playerMenu.hidden : !force;
+}
+document.getElementById('ccBtn').addEventListener('click', e => { e.stopPropagation(); renderQualityMenu(); toggleMenu(); });
+document.addEventListener('click', e => {
+  if (!playerMenu.hidden && !e.target.closest('#playerMenu, #ccBtn, #settingsBtn')) toggleMenu(false);
+});
+
+/* ══════════════════════════════════════════════
+    SYNC ENGINE — a shared room clock
+    The room's playback is one clock: { playing, time, at } = "at server time
+    `at` (ms) the video is at `time` seconds". Everyone follows the same clock:
+    a seek schedules a common restart a moment ahead, a newcomer jumps a little
+    ahead and waits for the room to arrive, and small drift is absorbed by
+    playing slightly faster or slower instead of jumping.
+══════════════════════════════════════════════ */
+let clock        = null;
+let clockOffset  = 0;      // Ably server time minus local time (ms)
+let holding      = false;  // paused by the engine, waiting for the room to catch up
+let waitingForTap = false; // a sync / start prompt is on screen
+let seekCost     = 1.5;    // smoothed seconds a seek takes to become playable here
+let seekStartedAt = 0;
+
+const serverNow = () => Date.now() + clockOffset;
+const lead = () => Math.min(10, Math.max(1.5, seekCost * 1.4 + 0.4));
+
+function expectedPos(c = clock) {
+  if (!c) return 0;
+  return c.playing ? c.time + Math.max(0, serverNow() - c.at) / 1000 : c.time;
+}
+
+function measureClockOffset() {
+  const t0 = Date.now();
+  ablyClient.time()
+    .then(server => { clockOffset = server - (t0 + Date.now()) / 2; })
+    .catch(() => {});
+}
+
+function broadcastSync(payload) {
+  if (!channel || !isChannelReady) return;
+  channel.publish('video_sync', payload);
+}
+
+function setClock(c) {
+  clock = c;
+  inSync = true;
+  updatePlayIcon();
+  tick();
+}
+
+function userPlay() {
+  const t = clock && !clock.playing ? clock.time : video.currentTime;
+  setClock({ playing: true, time: t, at: serverNow() });
+  broadcastSync({ type: 'play', time: t, at: clock.at });
+}
+
+function userPause() {
+  const t = video.currentTime;
+  setClock({ playing: false, time: t, at: serverNow() });
+  broadcastSync({ type: 'pause', time: t });
+}
+
+// While playing, everyone jumps now and restarts together a moment later
+function userSeek(t) {
+  const playing = clock ? clock.playing : false;
+  const at = serverNow() + (playing ? lead() * 1000 : 0);
+  setClock({ playing, time: t, at });
+  broadcastSync({ type: 'seek', time: t, playing, at });
+}
+
+function quietSeek(t) {
+  if (Math.abs(video.currentTime - t) < 0.05) return;
+  if (seekStartedAt) seekCost = Math.min(10, seekCost * 1.5); // the last jump never became playable
+  seekStartedAt = performance.now();
+  video.currentTime = t;
+}
+// Learn how long seeks take on this connection, to size the jump-ahead
+video.addEventListener('canplay', () => {
+  if (!seekStartedAt) return;
+  const took = (performance.now() - seekStartedAt) / 1000;
+  seekStartedAt = 0;
+  seekCost = seekCost * 0.6 + Math.min(took, 10) * 0.4;
+});
+
+function enginePlay() {
+  holding = false;
+  if (!video.paused) return;
+  video.play().catch(() => { if (clock && clock.playing) showSyncPrompt(); });
+}
+function enginePause(hold) {
+  holding = hold;
+  if (!video.paused) video.pause();
+}
+function setRate(r) { if (video.playbackRate !== r) video.playbackRate = r; }
+
+function tick() {
+  if (clock && videoLoaded && !waitingForTap && video.readyState >= 1) {
+    const exp = expectedPos();
+    const drift = video.currentTime - exp;            // > 0: ahead of the room
+    if (!clock.playing) {
+      setRate(1);
+      enginePause(false);
+      if (Math.abs(drift) > 0.25) quietSeek(exp);
+    } else if (serverNow() < clock.at) {              // a scheduled restart hasn't come yet
+      setRate(1);
+      enginePause(true);
+      if (Math.abs(video.currentTime - clock.time) > 0.25) quietSeek(clock.time);
+    } else if (drift < -2.5) {                        // far behind: jump ahead, let the room arrive
+      setRate(1);
+      enginePause(true);
+      quietSeek(exp + lead());
+    } else if (drift > 0.6 || (holding && drift > 0.05)) { // ahead (usually after a jump): wait
+      setRate(1);
+      enginePause(true);
+    } else {
+      enginePlay();
+      // Catch up (or ease off) by speed; 1.25x closes a 1-2s gap in a few seconds
+      setRate(drift < -0.8 ? 1.25 : drift < -0.15 ? 1.1 : drift > 0.15 ? 0.92 : 1);
+    }
+  }
+  const busy = clock && clock.playing && !waitingForTap && videoLoaded &&
+    (holding || video.seeking || (video.readyState < 3 && !video.paused));
+  document.getElementById('bufferSpin').hidden = !busy;
+}
+setInterval(tick, 250);
+video.addEventListener('waiting', tick);
+video.addEventListener('canplay', tick);
+
+function handleRemoteSync(payload, msg) {
+  if (payload.type === 'state_request') return answerStateRequest(payload.from);
+  if (payload.type === 'state') return receiveState(payload, msg);
+  const sentAt = (msg && msg.timestamp) || serverNow();
+
+  if (payload.type === 'load' && (payload.media || payload.src)) {
+    hideSyncPrompt();
+    loadMedia(payload.media || { url: payload.src, title: payload.title }).catch(() => {});
+    setClock({ playing: false, time: 0, at: sentAt });
+    addSystemMsg('A new video was loaded');
+  } else if (payload.type === 'play') {
+    setClock({ playing: true, time: payload.time, at: payload.at || sentAt });
+  } else if (payload.type === 'pause') {
+    setClock({ playing: false, time: payload.time, at: sentAt });
+  } else if (payload.type === 'seek') {
+    const playing = payload.playing !== undefined ? payload.playing : !!(clock && clock.playing);
+    setClock({ playing, time: payload.time, at: payload.at || sentAt });
+  }
+}
+
+/* ── Late join: ask the room for its clock ────────────────────────────
+   A newcomer sends state_request; one viewer already following the room
+   answers with the media and the clock. Answers are spread over a short
+   random delay so only the first one goes out. */
+let awaitingState = null;   // { initial, silent, fromButton } while we wait for an answer
+let stateTimer    = null;
+const answered    = new Set();
+
+function requestState(opts) {
+  if (!channel || !isChannelReady) { if (opts.initial) startAlone(); return; }
+  awaitingState = opts;
+  broadcastSync({ type: 'state_request', from: myClientId });
+  clearTimeout(stateTimer);
+  stateTimer = setTimeout(() => {
+    const was = awaitingState;
+    awaitingState = null;
+    if (!was) return;
+    if (was.initial) startAlone();
+    else if (was.fromButton) showToast('Nobody else is watching yet');
+  }, 2500);
+}
+
+function answerStateRequest(from) {
+  answered.delete(from);
+  if (!inSync || !currentMedia || !clock) return;
+  setTimeout(() => {
+    if (answered.has(from)) return;
+    answered.add(from);
+    broadcastSync({ type: 'state', to: from, media: currentMedia, clock });
+  }, Math.random() * 400);
+}
+
+function receiveState(s, msg) {
+  answered.add(s.to);
+  if (s.to !== myClientId || !awaitingState || !s.media) return;
+  const opts = awaitingState;
+  awaitingState = null;
+  clearTimeout(stateTimer);
+  loadMedia(s.media).catch(() => {});
+  const c = s.clock || { playing: !s.paused, time: s.time || 0, at: (msg && msg.timestamp) || serverNow() };
+  if (opts.silent) {
+    setClock(c);
+  } else {
+    clock = c;
+    showSyncPrompt();
+  }
+}
+
+let syncTicker = null;
+function showSyncPrompt() {
+  waitingForTap = true;
+  const paint = () => {
+    const alone = viewers.size <= 1;
+    const playing = clock && clock.playing;
+    document.getElementById('syncTitle').textContent = alone ? 'Start Watching' : playing ? 'Sync to the Room' : 'Join the Room';
+    document.getElementById('syncDetail').textContent = alone || !clock ? 'Tap to play'
+      : `Everyone is ${playing ? 'watching' : 'paused'} at ${fmtTime(expectedPos())} — tap to ${playing ? 'sync' : 'join'}`;
+  };
+  paint();
+  clearInterval(syncTicker);
+  syncTicker = setInterval(paint, 1000);
+  document.getElementById('syncOverlay').style.display = 'flex';
+  tick();
+}
+
+function hideSyncPrompt() {
+  waitingForTap = false;
+  clearInterval(syncTicker);
+  document.getElementById('syncOverlay').style.display = 'none';
+}
+
+// Nobody answered: we're first in the room, so start what the link asked for
+function startAlone() {
+  inSync = true;
+  if (!linkMedia) return;
+  loadMedia(linkMedia).then(() => { if (!clock) userPlay(); }).catch(() => {});
+}
+
+document.getElementById('syncBtn').addEventListener('click', () => {
+  if (!isChannelReady) return showToast('Not connected to the room yet');
+  showToast('Syncing with the room…');
+  requestState({ silent: true, fromButton: true });
+});
+
+/* ══════════════════════════════════════════════
+    CHAT
+══════════════════════════════════════════════ */
+const messagesList = document.getElementById('messagesList');
+const msgInput     = document.getElementById('msgInput');
+const sendBtn      = document.getElementById('sendBtn');
+
+sendBtn.addEventListener('click', sendMessage);
+msgInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+});
+
+function sendMessage() {
+  const text = msgInput.value.trim();
+  if (!text) return;
+  myName = usernameInput.value.trim() || myName;
+  localStorage.setItem('st_username', myName);
+  const payload = { text, name: myName, color: myColor, ts: Date.now() };
+  renderMessage(payload, true);
+  msgInput.value = '';
+  msgInput.style.height = '38px';
+  if (channel && isChannelReady) channel.publish('chat_message', payload);
+}
+
+function renderMessage(payload, isOwn) {
+  const group    = document.createElement('div');
+  group.className = 'msg-group' + (isOwn ? ' msg-own' : '');
+  const initials = (payload.name || 'G').slice(0, 2).toUpperCase();
+  const time     = new Date(payload.ts || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  group.innerHTML = `
+    <div class="msg-header">
+      <div class="msg-avatar" style="background:${payload.color}">${initials}</div>
+      <span class="msg-name" style="color:${payload.color}">${escapeHTML(payload.name)}</span>
+      <span class="msg-time">${time}</span>
+    </div>
+    <div class="msg-bubble${isOwn ? ' own' : ''}">${escapeHTML(payload.text)}</div>`;
+  messagesList.appendChild(group);
+  messagesList.scrollTop = messagesList.scrollHeight;
+}
+
+function handleUnreadBadge() {
+  const isChatActive = document.getElementById('chatTabButton')?.classList.contains('active');
+  if (isChatActive) return;
+  unreadCount++;
+  const b1 = document.getElementById('tabNotificationBadge');
+  const b2 = document.getElementById('chatNotificationBadge');
+  if (b1) { b1.textContent = unreadCount; b1.style.display = 'inline-flex'; }
+  if (b2) { b2.textContent = unreadCount; b2.style.display = 'flex'; }
+}
+
+function clearUnreadBadge() {
+  unreadCount = 0;
+  const b1 = document.getElementById('tabNotificationBadge');
+  const b2 = document.getElementById('chatNotificationBadge');
+  if (b1) { b1.textContent = ''; b1.style.display = 'none'; }
+  if (b2) { b2.textContent = ''; b2.style.display = 'none'; }
+}
+
+function playChatSound() {
+  try {
+    const s = document.getElementById('chatNotificationSound');
+    if (s) { s.currentTime = 0; s.play().catch(() => {}); }
+  } catch(e) {}
+}
+
+function addSystemMsg(text) {
+  const el = document.createElement('div');
+  el.className = 'system-msg';
+  el.innerHTML = `<span>${escapeHTML(text)}</span>`;
+  messagesList.appendChild(el);
+  messagesList.scrollTop = messagesList.scrollHeight;
+}
+
+/* ══════════════════════════════════════════════
+    VIEWERS UI
+══════════════════════════════════════════════ */
+function updateViewersUI() {
+  const count     = viewers.size;
+  const viewerArr = Array.from(viewers.values());
+  document.getElementById('onlineCount').textContent = count + ' online';
+
+  // Topbar chips
+  const stack = document.getElementById('viewerStack');
+  stack.innerHTML = '';
+  viewerArr.slice(0, 4).forEach(v => {
+    const chip = document.createElement('div');
+    chip.className   = 'v-chip';
+    chip.style.background = v.color || '#555';
+    chip.textContent = (v.name || 'G').slice(0, 1).toUpperCase();
+    chip.title = v.name;
+    stack.appendChild(chip);
+  });
+  if (count > 4) {
+    const more = document.createElement('div');
+    more.className   = 'v-chip v-count';
+    more.textContent = '+' + (count - 4);
+    stack.appendChild(more);
+  }
+
+  // Sidebar list
+  const list = document.getElementById('viewersList');
+  list.innerHTML = '';
+  viewerArr.forEach((v, i) => {
+    const row = document.createElement('div');
+    row.className = 'viewer-row';
+    row.innerHTML = `
+      <div class="v-avatar" style="background:${v.color||'#555'}">${(v.name||'G').slice(0,2).toUpperCase()}</div>
+      <div class="viewer-info">
+        <div class="viewer-name">${escapeHTML(v.name||'Guest')} ${v.name===myName?'(You)':''}</div>
+        <div class="viewer-status">Watching now</div>
+      </div>
+      ${i===0?'<span class="host-badge"><i class="fa-solid fa-crown"></i> Host</span>':'<div class="online-dot"></div>'}`;
+    list.appendChild(row);
+  });
+}
+
+/* ══════════════════════════════════════════════
+    REACTIONS
+══════════════════════════════════════════════ */
+document.querySelectorAll('.reaction-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const emoji = btn.getAttribute('data-emoji');
+    spawnFloatingReaction(emoji);
+    if (channel && isChannelReady) channel.publish('reaction', { emoji });
+  });
+});
+
+function spawnFloatingReaction(emoji) {
+  const el = document.createElement('div');
+  el.className = 'float-reaction';
+  el.innerHTML = STUI.reactionIcon(emoji);
+  el.style.left   = (20 + Math.random() * 60) + '%';
+  el.style.bottom = '80px';
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2100);
+}
+
+/* ══════════════════════════════════════════════
+    TABS
+══════════════════════════════════════════════ */
+document.querySelectorAll('.chat-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.chat-tab').forEach(t => {
+      t.classList.remove('active');
+      t.setAttribute('aria-selected', 'false');
+    });
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    tab.setAttribute('aria-selected', 'true');
+    document.getElementById(tab.dataset.tab + 'Panel').classList.add('active');
+    if (tab.dataset.tab === 'chat') clearUnreadBadge();
+  });
+});
+
+/* ══════════════════════════════════════════════
+    MOBILE CHAT
+══════════════════════════════════════════════ */
+const mobileChatBubble = document.getElementById('mobileChatBubble');
+const chatSidebar      = document.getElementById('chatSidebar');
+const chatBackdrop     = document.getElementById('chatBackdrop');
+
+function openMobileChat()  {
+  chatSidebar.classList.add('mobile-open');
+  if (chatBackdrop) chatBackdrop.classList.add('visible');
+  clearUnreadBadge();
+}
+function closeMobileChat() {
+  chatSidebar.classList.remove('mobile-open');
+  if (chatBackdrop) chatBackdrop.classList.remove('visible');
+}
+
+if (mobileChatBubble) mobileChatBubble.addEventListener('click', () => {
+  chatSidebar.classList.contains('mobile-open') ? closeMobileChat() : openMobileChat();
+});
+if (chatBackdrop) chatBackdrop.addEventListener('click', closeMobileChat);
+
+/* ══════════════════════════════════════════════
+    SHARE MODAL
+══════════════════════════════════════════════ */
+const shareModal = document.getElementById('shareModal');
+document.getElementById('shareBtn').addEventListener('click', () => shareModal.classList.add('open'));
+document.getElementById('closeModalBtn').addEventListener('click', () => shareModal.classList.remove('open'));
+shareModal.addEventListener('click', e => { if (e.target === shareModal) shareModal.classList.remove('open'); });
+document.getElementById('copyLinkBtn').addEventListener('click', () => {
+  navigator.clipboard.writeText(inviteLink()).then(() => {
+    showToast('Link copied!');
+    shareModal.classList.remove('open');
+  });
+});
+
+document.getElementById('settingsBtn').addEventListener('click', e => { e.stopPropagation(); renderQualityMenu(); toggleMenu(); });
+
+/* ══════════════════════════════════════════════
+    UTILITIES
+══════════════════════════════════════════════ */
+function fmtTime(s) {
+  if (!s || isNaN(s)) return '0:00';
+  const h   = Math.floor(s / 3600);
+  const m   = Math.floor((s % 3600) / 60);
+  const sec = Math.floor(s % 60).toString().padStart(2, '0');
+  return h > 0 ? `${h}:${m.toString().padStart(2,'0')}:${sec}` : `${m}:${sec}`;
+}
+function escapeHTML(str) {
+  return String(str||'').replace(/[&<>'"]/g, t =>
+    ({ '&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;' }[t]||t));
+}
+function randomColor() {
+  const c = ['#e50914','#1a73e8','#0f9d58','#f4b400','#9c27b0','#00bcd4','#ff5722','#e91e63'];
+  const col = c[Math.floor(Math.random() * c.length)];
+  localStorage.setItem('st_color', col);
+  return col;
+}
+let toastTimer;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+/* ══════════════════════════════════════════════
+    SYNC OVERLAY — only shown when browser blocks autoplay on remote play
+══════════════════════════════════════════════ */
+function dismissSyncOverlay() {
+  hideSyncPrompt();
+  inSync = true;
+  if (!clock) return userPlay();
+  tick();   // the tap is the user gesture the browser wanted before playing with sound
+}
+document.getElementById('syncOverlay').addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); dismissSyncOverlay(); }
+});
+
+/* ══════════════════════════════════════════════
+    INIT
+══════════════════════════════════════════════ */
+window.addEventListener('DOMContentLoaded', () => {
+  renderQualityMenu();
+  renderSubtitleMenu();
+  initAbly();
+
+  if (linkMedia) {
+    if (linkMedia.url) urlInput.value = linkMedia.url;
+    // Start fetching right away; whether we play from the start or sync to
+    // others is decided once the room answers (or doesn't)
+    loadMedia(linkMedia).catch(() => {});
+  }
+  // If the room service can't be reached at all, still play what the link asked for
+  setTimeout(() => { if (!joinedOnce) { joinedOnce = true; startAlone(); } }, 8000);
+});
+</script>
+<script src="js/ui.js"></script>
+<script>
+/* Presentation-only extras for the room. They react to the video and
+   inputs the room script already drives — sync/chat logic is untouched. */
+(function () {
+  const v = document.getElementById('videoPlayer');
+
+  // Volume icon + slider fill. The room script writes an emoji into the
+  // mute button; volumechange fires right after, so the icon wins.
+  const mute = document.getElementById('muteBtn');
+  const vol = document.getElementById('volSlider');
+  const syncVol = () => {
+    const level = v.muted ? 0 : v.volume;
+    const icon = level === 0 ? 'fa-volume-xmark' : level < 0.5 ? 'fa-volume-low' : 'fa-volume-high';
+    mute.innerHTML = `<i class="fa-solid ${icon}"></i>`;
+    vol.style.setProperty('--v', (Number(vol.value) * 100) + '%');
+  };
+  v.addEventListener('volumechange', syncVol);
+  vol.addEventListener('input', syncVol);
+
+  // Fullscreen icon
+  const fs = document.getElementById('fullscreenBtn');
+  document.addEventListener('fullscreenchange', () => {
+    fs.innerHTML = `<i class="fa-solid ${document.fullscreenElement ? 'fa-compress' : 'fa-expand'}"></i>`;
+  });
+
+  // Auto-growing message box (the room script resets it to 38px after send)
+  const msg = document.getElementById('msgInput');
+  msg.addEventListener('input', () => {
+    msg.style.height = '38px';
+    msg.style.height = Math.min(msg.scrollHeight, 96) + 'px';
+  });
+
+  // "Try a sample video" fills the URL box and presses Load
+  document.querySelectorAll('.sample-chip[data-sample]').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.getElementById('videoUrlInput').value = chip.dataset.sample;
+      document.getElementById('loadVideoBtn').click();
+    });
+  });
+
+  // Space toggles play, arrows skip 10s (when not typing)
+  document.addEventListener('keydown', e => {
+    if (/input|textarea|select/i.test(document.activeElement.tagName) || v.classList.contains('video-hidden')) return;
+    if (e.code === 'Space') { e.preventDefault(); document.getElementById('playPauseBtn').click(); }
+    if (e.code === 'ArrowLeft') { e.preventDefault(); skipVideo(-10); }
+    if (e.code === 'ArrowRight') { e.preventDefault(); skipVideo(10); }
+  });
+})();
+</script>
+</body>
+</html>

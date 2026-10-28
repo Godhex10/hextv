@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StreamTogether — Movie Library</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css" integrity="sha512-2SwdPD6INVrV/lHTZbO2nodKhrnDdJK9/kg2XD1r9uGqPo1cUbujc+IYdlYdEErWNu69gVcYgdxlmVmzTWnetw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/library.css">
+</head>
+<body>
+
+<div class="topbar" data-nav>
+  <a class="logo-sm brand" href="index.html"><span class="brand-mark"><i class="fa-solid fa-play"></i></span><span class="brand-text">Stream<span>Together</span></span></a>
+  <nav class="top-links" aria-label="Main">
+    <a href="index.html">Home</a>
+    <a href="library.html" class="active" aria-current="page">Library</a>
+    <a href="how-to.html">Guide</a>
+  </nav>
+  <div class="topbar-right">
+    <a class="icon-btn create-room" href="room.html" title="Create an empty room" aria-label="Create room"><i class="fa-solid fa-plus"></i></a>
+  </div>
+</div>
+
+<div class="library-container">
+  <div class="library-header">
+    <div class="lib-backdrop" id="libBackdrop" aria-hidden="true"></div>
+    <span class="kicker lib-kicker"><span class="pulse-dot"></span> Tonight's watch party starts here</span>
+    <h1><span>Movie</span> <em>Library</em></h1>
+    <p>Pick a movie or an episode and we'll open a room for you and your friends</p>
+    <form class="search-wrapper" id="searchForm" role="search">
+      <i class="fa-solid fa-magnifying-glass search-ic" aria-hidden="true"></i>
+      <input type="search" class="search-input" id="librarySearchInput" placeholder="Search movies and series..." autocomplete="off" aria-label="Search">
+      <kbd class="search-kbd" aria-hidden="true">/</kbd>
+      <button class="btn-search" type="submit">Search</button>
+    </form>
+  </div>
+
+  <div class="filters-bar">
+    <div class="type-toggle" role="tablist" aria-label="Content type">
+      <button class="genre-pill active" data-type="all">All</button>
+      <button class="genre-pill" data-type="movie"><i class="fa-solid fa-film"></i> Movies</button>
+      <button class="genre-pill" data-type="series"><i class="fa-solid fa-tv"></i> Series</button>
+    </div>
+    <div class="genre-filters" id="categoryPills" aria-label="Categories"></div>
+  </div>
+
+  <h2 class="grid-section-title" id="gridTitle"><span id="gridTitleText">For You</span><span class="grid-loader" id="gridLoader"></span></h2>
+  <div id="libraryView"></div>
+</div>
+
+<!-- Title details: seasons, episodes and the "watch together" button -->
+<div class="stream-modal-overlay" id="detailModal" role="dialog" aria-modal="true" aria-labelledby="detailTitle">
+  <div class="stream-modal detail-modal">
+    <button class="detail-x" id="detailClose" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+    <div class="detail-head">
+      <img class="detail-poster" id="detailPoster" alt="">
+      <div class="detail-info">
+        <span class="detail-type" id="detailType"></span>
+        <h3 id="detailTitle">Loading…</h3>
+        <div class="detail-chips" id="detailChips"></div>
+      </div>
+    </div>
+    <p class="detail-desc" id="detailDesc"></p>
+    <div id="detailEpisodes"></div>
+    <div class="detail-actions">
+      <select class="detail-select" id="detailDub" aria-label="Audio version" hidden></select>
+      <button class="detail-watch" id="detailWatch" disabled><i class="fa-solid fa-user-group"></i> <span>Watch together</span></button>
+    </div>
+  </div>
+</div>
+
+<script src="js/moviebox.js"></script>
+<script>
+/* ══════════════════════════════════════════════
+    STATE
+══════════════════════════════════════════════ */
+let rows        = [];        // home feed: [{ title, items }]
+let category    = '';        // '' = For You (all rows as shelves)
+let typeFilter  = 'all';     // 'all' | 'movie' | 'series'
+let searchQuery = '';
+let searchItems = [];
+
+const view       = document.getElementById('libraryView');
+const titleText  = document.getElementById('gridTitleText');
+const gridLoader = document.getElementById('gridLoader');
+const pills      = document.getElementById('categoryPills');
+
+const FALLBACK_POSTER = 'data:image/svg+xml,' + encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="450"><rect width="300" height="450" fill="#16161c"/></svg>');
+
+/* ══════════════════════════════════════════════
+    CATALOGUE
+══════════════════════════════════════════════ */
+async function loadHome() {
+  setLoading(true);
+  view.innerHTML = skeletonGrid(14);
+  try {
+    rows = (await MB.get('/catalog/home')).rows || [];
+    renderPills();
+    render();
+  } catch (e) {
+    showError('Could not load the library: ' + e.message + '. Is the API running?');
+  } finally {
+    setLoading(false);
+  }
+}
+
+function renderPills() {
+  const names = ['', ...new Set(rows.map(r => r.title))];
+  pills.innerHTML = names.map(n =>
+    `<button class="genre-pill${n === category ? ' active' : ''}" data-cat="${escapeHTML(n)}">${n ? escapeHTML(n) : '<i class="fa-solid fa-fire"></i> For You'}</button>`
+  ).join('');
+}
+
+pills.addEventListener('click', e => {
+  const b = e.target.closest('[data-cat]');
+  if (!b) return;
+  category = b.dataset.cat;
+  searchQuery = '';
+  document.getElementById('librarySearchInput').value = '';
+  pills.querySelectorAll('.genre-pill').forEach(p => p.classList.toggle('active', p === b));
+  render();
+});
+
+document.querySelectorAll('[data-type]').forEach(b => b.addEventListener('click', () => {
+  typeFilter = b.dataset.type;
+  document.querySelectorAll('[data-type]').forEach(x => x.classList.toggle('active', x === b));
+  render();
+}));
+
+const byType = items => items.filter(it => typeFilter === 'all' || it.type === typeFilter);
+
+function dedupe(items) {
+  const seen = new Set();
+  return items.filter(it => !seen.has(it.subject_id) && seen.add(it.subject_id));
+}
+
+function render() {
+  if (searchQuery) {
+    titleText.textContent = `Results for "${searchQuery}"`;
+    return renderGrid(byType(searchItems), 'No matches. Try another title.');
+  }
+  if (category) {
+    titleText.textContent = category;
+    return renderGrid(byType(dedupe(rows.filter(r => r.title === category).flatMap(r => r.items))), 'Nothing here for this filter.');
+  }
+  titleText.textContent = typeFilter === 'series' ? 'Series For You' : typeFilter === 'movie' ? 'Movies For You' : 'For You';
+  const shelves = rows.map(r => ({ title: r.title, items: byType(r.items) })).filter(r => r.items.length);
+  if (!shelves.length) return showError('Nothing to show for this filter.');
+  view.innerHTML = shelves.map((r, s) => `
+    <section class="shelf">
+      <div class="shelf-head">
+        <h3>${escapeHTML(r.title)}</h3>
+        <button class="shelf-more" data-cat="${escapeHTML(r.title)}">See all <i class="fa-solid fa-chevron-right"></i></button>
+      </div>
+      <div class="shelf-track">${r.items.map((it, i) => cardHTML(it, i, s)).join('')}</div>
+    </section>`).join('');
+  setBackdrop(shelves[0].items[0]);
+}
+
+function renderGrid(items, emptyMsg) {
+  if (!items.length) return showError(emptyMsg);
+  view.innerHTML = `<div class="movies-grid">${items.map((it, i) => cardHTML(it, i, 0)).join('')}</div>`;
+  setBackdrop(items[0]);
+}
+
+const cardIndex = new Map(); // subject_id -> card data, for click handling
+
+function cardHTML(it, i, shelf) {
+  cardIndex.set(it.subject_id, it);
+  const title = escapeHTML(it.title || 'Untitled');
+  const delay = shelf < 2 ? Math.min(i, 12) : 0;
+  return `
+    <div class="movie-card" tabindex="0" data-id="${escapeHTML(it.subject_id)}" style="--i:${delay}">
+      <div class="poster-wrap">
+        <img class="poster-img" src="${escapeHTML(it.cover || FALLBACK_POSTER)}" alt="" loading="lazy" onerror="this.src='${FALLBACK_POSTER}'">
+        ${it.type === 'series' ? '<span class="format-badge webm">SERIES</span>' : ''}
+        <div class="card-overlay-btn"><span class="play-badge"><i class="fa-solid fa-play"></i> Watch</span></div>
+      </div>
+      <div class="movie-details">
+        <h3 class="movie-title" title="${title}">${title}</h3>
+        <div class="movie-meta-row">
+          <span>${escapeHTML(it.year || '')}</span>
+          ${it.rating ? `<span class="movie-rating"><span class="rating-star"><i class="fa-solid fa-star"></i></span> ${escapeHTML(it.rating)}</span>` : ''}
+        </div>
+      </div>
+    </div>`;
+}
+
+view.addEventListener('click', e => {
+  const more = e.target.closest('.shelf-more');
+  if (more) {
+    pills.querySelector(`[data-cat="${CSS.escape(more.dataset.cat)}"]`)?.click();
+    window.scrollTo({ top: document.querySelector('.filters-bar').offsetTop - 70, behavior: 'smooth' });
+    return;
+  }
+  const card = e.target.closest('.movie-card');
+  if (card) openDetail(cardIndex.get(card.dataset.id));
+});
+view.addEventListener('keydown', e => {
+  const card = e.target.closest('.movie-card');
+  if (card && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openDetail(cardIndex.get(card.dataset.id)); }
+});
+
+/* ══════════════════════════════════════════════
+    SEARCH
+══════════════════════════════════════════════ */
+document.getElementById('searchForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const q = document.getElementById('librarySearchInput').value.trim();
+  if (!q) { searchQuery = ''; return render(); }
+  searchQuery = q;
+  titleText.textContent = `Results for "${q}"`;
+  setLoading(true);
+  view.innerHTML = skeletonGrid(14);
+  try {
+    // MovieBox rejects searches asking for more than 20 results
+    const d = await MB.get('/search?q=' + encodeURIComponent(q) + '&per_page=20');
+    searchItems = (d.results || [])
+      .filter(r => r.subject_type === 1 || r.subject_type === 2)
+      .map(r => ({ subject_id: r.subject_id, title: r.title, cover: r.cover,
+                   type: r.subject_type === 2 ? 'series' : 'movie',
+                   year: (r.release_date || '').slice(0, 4), rating: r.imdb_rating }));
+    if (searchQuery === q) render();
+  } catch (err) {
+    showError('Search failed: ' + err.message);
+  } finally {
+    setLoading(false);
+  }
+});
+
+/* ══════════════════════════════════════════════
+    DETAIL + EPISODE PICKER
+══════════════════════════════════════════════ */
+const detailModal = document.getElementById('detailModal');
+const watchBtn    = document.getElementById('detailWatch');
+const dubSelect   = document.getElementById('detailDub');
+let detail = null;     // { id, title, type, seasons, season, episode }
+
+async function openDetail(item) {
+  if (!item) return;
+  detail = { id: item.subject_id, title: item.title, type: item.type, seasons: [], season: 0, episode: 0 };
+  document.getElementById('detailPoster').src = item.cover || FALLBACK_POSTER;
+  document.getElementById('detailTitle').textContent = item.title;
+  document.getElementById('detailType').textContent = item.type === 'series' ? 'Series' : 'Movie';
+  document.getElementById('detailChips').innerHTML = '';
+  document.getElementById('detailDesc').textContent = '';
+  document.getElementById('detailEpisodes').innerHTML = item.type === 'series' ? '<div class="detail-loading">Loading episodes…</div>' : '';
+  dubSelect.hidden = true;
+  watchBtn.disabled = true;
+  detailModal.classList.add('open');
+  await loadDetail(item.subject_id);
+}
+
+async function loadDetail(id) {
+  try {
+    const [d, eps] = await Promise.all([
+      MB.get('/detail/' + id),
+      detail.type === 'series' ? MB.get('/episodes/' + id).catch(() => ({ seasons: [] })) : Promise.resolve({ seasons: [] })
+    ]);
+    if (!detail || detail.id !== id) return;
+    const chips = [d.release_date && d.release_date.slice(0, 4), d.duration, d.imdb_rating && `<i class="fa-solid fa-star"></i> ${escapeHTML(d.imdb_rating)}`, d.genre, d.country]
+      .filter(Boolean).map(c => `<span>${c.startsWith('<i') ? c : escapeHTML(c)}</span>`).join('');
+    document.getElementById('detailChips').innerHTML = chips;
+    document.getElementById('detailDesc').textContent = d.description || '';
+    if (d.cover) document.getElementById('detailPoster').src = d.cover;
+    renderDubs(d.dubs || [], id);
+
+    detail.seasons = (eps.seasons || []).filter(s => s.episode_count > 0);
+    if (detail.seasons.length) {
+      detail.season = detail.seasons[0].season;
+      detail.episode = 1;
+    }
+    renderEpisodes();
+    watchBtn.disabled = false;
+  } catch (e) {
+    document.getElementById('detailDesc').textContent = 'Could not load this title: ' + e.message;
+  }
+}
+
+// Some titles come in several audio versions, each its own MovieBox entry
+function renderDubs(dubs, currentId) {
+  if (dubs.length < 2) { dubSelect.hidden = true; return; }
+  dubSelect.innerHTML = dubs.map(d =>
+    `<option value="${escapeHTML(d.subject_id)}"${d.subject_id === currentId ? ' selected' : ''}>${escapeHTML(d.lang_name || 'Audio')}</option>`).join('');
+  dubSelect.hidden = false;
+}
+dubSelect.addEventListener('change', () => {
+  detail.id = dubSelect.value;
+  watchBtn.disabled = true;
+  loadDetail(dubSelect.value);
+});
+
+function renderEpisodes() {
+  const box = document.getElementById('detailEpisodes');
+  if (!detail.seasons.length) { box.innerHTML = ''; updateWatchLabel(); return; }
+  const season = detail.seasons.find(s => s.season === detail.season) || detail.seasons[0];
+  box.innerHTML = `
+    <div class="season-tabs">${detail.seasons.map(s =>
+      `<button class="genre-pill${s.season === season.season ? ' active' : ''}" data-season="${s.season}">Season ${s.season}</button>`).join('')}</div>
+    <div class="episode-grid">${Array.from({ length: season.episode_count }, (_, i) =>
+      `<button class="episode-btn${i + 1 === detail.episode ? ' active' : ''}" data-ep="${i + 1}">${i + 1}</button>`).join('')}</div>`;
+  updateWatchLabel();
+}
+
+document.getElementById('detailEpisodes').addEventListener('click', e => {
+  const s = e.target.closest('[data-season]');
+  const ep = e.target.closest('[data-ep]');
+  if (s) { detail.season = Number(s.dataset.season); detail.episode = 1; renderEpisodes(); }
+  if (ep) { detail.episode = Number(ep.dataset.ep); renderEpisodes(); }
+});
+
+function updateWatchLabel() {
+  watchBtn.querySelector('span').textContent = detail.seasons.length
+    ? `Watch S${detail.season} E${detail.episode} together` : 'Watch together';
+}
+
+watchBtn.addEventListener('click', () => {
+  const episodeTitle = detail.seasons.length ? `${detail.title} · S${detail.season} E${detail.episode}` : detail.title;
+  window.location.href = MB.roomUrl({ mb: detail.id, se: detail.season, ep: detail.episode, title: episodeTitle });
+});
+
+function closeDetail() { detailModal.classList.remove('open'); detail = null; }
+document.getElementById('detailClose').addEventListener('click', closeDetail);
+detailModal.addEventListener('click', e => { if (e.target === detailModal) closeDetail(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && detailModal.classList.contains('open')) closeDetail(); });
+
+/* ══════════════════════════════════════════════
+    UTILITIES
+══════════════════════════════════════════════ */
+let lastBackdrop = '';
+function setBackdrop(item) {
+  const src = item && item.cover;
+  if (!src || src === lastBackdrop) return;
+  lastBackdrop = src;
+  const el = document.getElementById('libBackdrop');
+  const pre = new Image();
+  pre.onload = () => { el.style.backgroundImage = `url("${src}")`; el.classList.add('on'); };
+  pre.src = src;
+}
+
+function setLoading(on) { gridLoader.textContent = on ? 'loading…' : ''; }
+
+function skeletonGrid(n) {
+  return '<div class="movies-grid">' + Array.from({ length: n }, () =>
+    '<div class="skeleton-card"><div class="skeleton-poster"></div><div class="skeleton-details"><div class="skeleton-line"></div><div class="skeleton-line short"></div></div></div>').join('') + '</div>';
+}
+
+function showError(msg) {
+  view.innerHTML = `<div class="movies-grid"><div class="status-message"><i class="fa-solid fa-triangle-exclamation"></i> ${escapeHTML(msg)}</div></div>`;
+}
+
+function escapeHTML(str) {
+  return String(str || '').replace(/[&<>'"]/g, t => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[t] || t));
+}
+
+// "/" focuses search
+document.addEventListener('keydown', e => {
+  if (e.key === '/' && !/input|textarea|select/i.test(document.activeElement.tagName)) {
+    e.preventDefault();
+    document.getElementById('librarySearchInput').focus();
+  }
+});
+
+loadHome();
+</script>
+<script src="js/ui.js"></script>
+</body>
+</html>

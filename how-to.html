@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StreamTogether — How To Stream</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght=0,300;0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --red: #E50914;
+    --red-dark: #b20710;
+    --red-glow: rgba(229,9,20,0.18);
+    --black: #000;
+    --dark: #0a0a0a;
+    --surface: #111111;
+    --surface2: #1a1a1a;
+    --border: rgba(255,255,255,0.08);
+    --border-hover: rgba(255,255,255,0.16);
+    --text: #ffffff;
+    --muted: #888888;
+    --muted2: #555555;
+    --topbar-h: 54px;
+  }
+
+  html, body { height: 100%; background: var(--black); color: var(--text); font-family: 'DM Sans', sans-serif; }
+
+  /* ─── TOP BAR (Matches Room Page) ─── */
+  .topbar {
+    height: var(--topbar-h);
+    background: rgba(10,10,10,0.98);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 1.2rem;
+    gap: 1rem;
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 50;
+  }
+  .logo-sm {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.4rem;
+    color: var(--red);
+    text-decoration: none;
+    letter-spacing: 0.04em;
+  }
+  .logo-sm span { color: #fff; }
+  .topbar-divider { width: 1px; height: 22px; background: var(--border); }
+  .page-title { font-size: 0.9rem; font-weight: 600; letter-spacing: 0.02em; }
+  
+  .topbar-right { margin-left: auto; }
+  .btn-back {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    color: var(--text);
+    text-decoration: none;
+    font-size: 0.8rem;
+    font-weight: 500;
+    padding: 0.5rem 1rem;
+    display: flex; align-items: center; gap: 0.4rem;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .btn-back:hover { background: var(--surface2); border-color: var(--border-hover); }
+
+  /* ─── MAIN CONTAINER ─── */
+  .container {
+    max-width: 800px;
+    margin: calc(var(--topbar-h) + 2.5rem) auto 3rem auto;
+    padding: 0 1.5rem;
+  }
+
+  /* ─── HEADER ─── */
+  .header-section { text-align: center; margin-bottom: 3rem; }
+  .header-section h1 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 3rem;
+    letter-spacing: 0.04em;
+    margin-bottom: 0.5rem;
+  }
+  .header-section p { color: var(--muted); font-size: 1rem; max-width: 500px; margin: 0 auto; line-height: 1.5; }
+
+  /* ─── ACCORDION CARDS ─── */
+  .guide-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 1.2rem;
+    overflow: hidden;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .guide-card:hover { border-color: var(--border-hover); }
+  .guide-card.open { border-color: rgba(229, 9, 20, 0.3); box-shadow: 0 4px 20px var(--red-glow); }
+
+  .guide-header {
+    padding: 1.2rem 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    user-select: none;
+    background: transparent;
+  }
+  .guide-header-left { display: flex; align-items: center; gap: 1rem; }
+  .guide-icon { font-size: 1.8rem; width: 40px; text-align: center; opacity: 0.85; }
+  .guide-title { font-size: 1.1rem; font-weight: 600; letter-spacing: 0.01em; }
+  .guide-arrow {
+    font-size: 0.8rem;
+    color: var(--muted);
+    transition: transform 0.2s;
+  }
+  .guide-card.open .guide-arrow { transform: rotate(180deg); color: var(--red); }
+
+  /* Content area collapse styles */
+  .guide-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease-out;
+    background: rgba(10, 10, 10, 0.4);
+  }
+  .guide-body { padding: 0 1.5rem 1.5rem 1.5rem; border-top: 1px solid transparent; }
+  .guide-card.open .guide-content { max-height: 1000px; /* high budget fallback for pure css animation fluidity */ }
+  .guide-card.open .guide-body { border-top-color: var(--border); }
+
+  /* ─── TEXT FORMATTING INSIDE GUIDES ─── */
+  .guide-body p { color: rgba(255,255,255,0.8); line-height: 1.6; font-size: 0.9rem; margin-bottom: 1rem; }
+  
+  .steps-list { list-style: none; margin-bottom: 1.2rem; }
+  .steps-list li {
+    position: relative;
+    padding-left: 2rem;
+    margin-bottom: 0.8rem;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: rgba(255,255,255,0.85);
+  }
+  .steps-list li::before {
+    content: attr(data-step);
+    position: absolute;
+    left: 0; top: 2px;
+    width: 20px; height: 20px;
+    background: var(--surface2);
+    border: 1px solid var(--border-hover);
+    border-radius: 50%;
+    color: var(--red);
+    font-size: 0.72rem; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* Code structure fields */
+  .code-box {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.8rem 1rem;
+    font-family: monospace;
+    font-size: 0.8rem;
+    color: #ff6b6b;
+    word-break: break-all;
+    margin-bottom: 1rem;
+    display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+  }
+  .code-text { flex: 1; }
+  .btn-mini-copy {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--muted);
+    padding: 0.2rem 0.5rem;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.7rem; cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .btn-mini-copy:hover { background: var(--red-glow); color: var(--red); border-color: rgba(229,9,20,0.3); }
+
+  .badge-tip {
+    background: rgba(229, 9, 20, 0.1);
+    border-left: 3px solid var(--red);
+    padding: 0.75rem 1rem;
+    border-radius: 0 6px 6px 0;
+    font-size: 0.82rem;
+    color: rgba(255,255,255,0.75);
+    line-height: 1.5;
+  }
+
+  /* Toast helper popup */
+  .toast {
+    position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--surface2); border: 1px solid var(--border-hover); border-radius: 8px;
+    padding: 0.6rem 1.2rem; font-size: 0.82rem; z-index: 999; opacity: 0;
+    transition: opacity 0.2s, transform 0.2s; pointer-events: none; white-space: nowrap;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a class="logo-sm" href="index.html">Stream<span>Together</span></a>
+  <div class="topbar-divider"></div>
+  <span class="page-title">Streaming Guide</span>
+  <div class="topbar-right">
+    <a href="index.html" class="btn-back">🏠 Back to Lobby</a>
+  </div>
+</div>
+
+<div class="container">
+  
+  <div class="header-section">
+    <h1>How to Stream Movies</h1>
+    <p>Learn how to connect directly external web links or tap into cloud storage spaces to watch along effortlessly with friends.</p>
+  </div>
+
+  <div class="guide-card">
+    <div class="guide-header" onclick="toggleAccordion(this)">
+      <div class="guide-header-left">
+        <span class="guide-icon">🌐</span>
+        <span class="guide-title">Method 1: Using Normal Direct Links</span>
+      </div>
+      <span class="guide-arrow">▼</span>
+    </div>
+    <div class="guide-content">
+      <div class="guide-body">
+        <p>A direct link points directly to a raw video container file floating online. If the link does not finish with an explicit format file extension, the media engine player framework won't be able to open it.</p>
+        
+        <ul class="steps-list">
+          <li data-step="1">Locate a public video file hosted on a clean CDN server or open directory.</li>
+          <li data-step="2">Verify that the target address finishes explicitly with <strong>.mp4</strong>, <strong>.webm</strong>, or <strong>.ogg</strong> extensions.</li>
+          <li data-step="3">Paste the link into the URL top field in your watch room layout, and hit <strong>Load</strong>.</li>
+        </ul>
+
+        <div class="code-box">
+          <span class="code-text" id="sampleDirectLink">https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4</span>
+          <button class="btn-mini-copy" onclick="copyCode('sampleDirectLink')">Copy Test URL</button>
+        </div>
+
+        <div class="badge-tip">
+          <strong>⚠️ Avoid Website wrappers:</strong> URLs from streaming platforms like YouTube, Netflix, or Vimeo are website containers, not raw video files. They will not load in a native standard video element tag.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="guide-card">
+    <div class="guide-header" onclick="toggleAccordion(this)">
+      <div class="guide-header-left">
+        <span class="guide-icon">💾</span>
+        <span class="guide-title">Method 2: Using Google Drive Links</span>
+      </div>
+      <span class="guide-arrow">▼</span>
+    </div>
+    <div class="guide-content">
+      <div class="guide-body">
+        <p>Google Drive is ideal for hosting full-length films (up to 15GB completely free). However, standard file share addresses point to the Google Drive preview browser interface instead of the raw asset stream. Here is how to create a bypass link:</p>
+        
+        <ul class="steps-list">
+          <li data-step="1">Upload your movie file to your Google Drive ecosystem.</li>
+          <li data-step="2">Right-click the asset, select <strong>Share</strong>, and set the visibility parameters permissions explicitly to <strong>"Anyone with the link"</strong>.</li>
+          <li data-step="3">Copy that share link and identify the long sequence of characters in the middle—this is your distinct <strong>File ID</strong>.</li>
+          <li data-step="4">Drop that extracted ID into the structural layout template pattern format detailed below:</li>
+        </ul>
+
+        <div class="code-box">
+          <span class="code-text" id="driveTemplate">https://docs.google.com/uc?export=download&id=YOUR_FILE_ID_HERE</span>
+          <button class="btn-mini-copy" onclick="copyCode('driveTemplate')">Copy Base Structure</button>
+        </div>
+
+        <div class="badge-tip">
+          <strong>💡 Pro Tip:</strong> Once you load this bypass link format into your StreamTogether window, your friends are streaming instantly from Google's high-speed content delivery network without needing to download anything!
+        </div>
+      </div>
+    </div>
+  </div>
+
+  </div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // Simple fluid Accordion switch engine
+  function toggleAccordion(headerElement) {
+    const card = headerElement.parentElement;
+    const content = card.querySelector('.guide-content');
+    const isOpen = card.classList.contains('open');
+    
+    // Close all cards first for clean transition presentation layout
+    document.querySelectorAll('.guide-card').forEach(item => {
+      item.classList.remove('open');
+      item.querySelector('.guide-content').style.maxHeight = null;
+    });
+
+    if (!isOpen) {
+      card.classList.add('open');
+      // Set to scrollHeight dynamically to trigger CSS transition heights smoothly
+      content.style.maxHeight = content.scrollHeight + "px";
+    }
+  }
+
+  // Quick clipboard utilities layout integration
+  function copyCode(elementId) {
+    const textToCopy = document.getElementById(elementId).innerText;
+    navigator.clipboard.writeText(textToCopy).then(() => {
+      showToast("✨ Copied structural path asset to clipboard!");
+    });
+  }
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2500);
+  }
+</script>
+</body>
+</html>

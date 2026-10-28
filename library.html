@@ -1,0 +1,1715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StreamTogether — Movie Library</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --red: #E50914;
+    --red-dark: #b20710;
+    --red-glow: rgba(229,9,20,0.18);
+    --black: #000;
+    --dark: #0a0a0a;
+    --surface: #111111;
+    --surface2: #1a1a1a;
+    --border: rgba(255,255,255,0.08);
+    --border-hover: rgba(255,255,255,0.16);
+    --text: #ffffff;
+    --muted: #888888;
+    --muted2: #555555;
+    --imdb-gold: #f5c518;
+    --topbar-h: 54px;
+  }
+
+  html, body { min-height: 100%; background: var(--black); color: var(--text); font-family: 'DM Sans', sans-serif; }
+
+  /* TOP BAR */
+  .topbar {
+    height: var(--topbar-h);
+    background: rgba(10,10,10,0.98);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 2rem;
+    gap: 1.5rem;
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 100;
+  }
+  .logo-sm { font-family: 'Bebas Neue', sans-serif; font-size: 1.6rem; color: var(--red); text-decoration: none; letter-spacing: 0.04em; white-space: nowrap; }
+  .logo-sm span { color: #fff; }
+  .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 0.8rem; }
+
+  /* Source toggle */
+  .source-toggle {
+    display: flex;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .source-btn {
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.78rem;
+    font-weight: 500;
+    padding: 0.4rem 0.9rem;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .source-btn.active { background: var(--red); color: #fff; }
+
+  /* MAIN CONTAINER */
+  .library-container { max-width: 1400px; margin: 0 auto; padding: calc(var(--topbar-h) + 2rem) 2rem 3rem 2rem; }
+
+  /* HEADER */
+  .library-header { margin-bottom: 2.5rem; text-align: center; }
+  .library-header h1 { font-family: 'Bebas Neue', sans-serif; font-size: 3rem; letter-spacing: 0.03em; margin-bottom: 0.5rem; }
+  .library-header p { color: var(--muted); font-size: 0.95rem; margin-bottom: 2rem; }
+
+  .search-wrapper { max-width: 600px; margin: 0 auto; display: flex; gap: 0.6rem; }
+  .search-input {
+    flex: 1; background: var(--surface); border: 1px solid var(--border-hover); border-radius: 8px;
+    padding: 0.85rem 1.2rem; color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 0.95rem;
+    outline: none; transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .search-input:focus { border-color: var(--red); box-shadow: 0 0 12px var(--red-glow); }
+  .search-input::placeholder { color: var(--muted2); }
+  .btn-search {
+    background: var(--red); border: none; border-radius: 8px; color: #fff; padding: 0 1.8rem;
+    font-family: 'DM Sans', sans-serif; font-size: 0.9rem; font-weight: 600; cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+  }
+  .btn-search:hover { background: var(--red-dark); transform: scale(1.02); }
+
+  /* GENRE FILTERS */
+  .genre-filters { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 2rem; justify-content: center; }
+  .genre-pill {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 20px;
+    color: var(--muted); font-size: 0.78rem; font-weight: 500; padding: 0.35rem 0.9rem;
+    cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  .genre-pill:hover, .genre-pill.active { background: var(--red); color: #fff; border-color: var(--red); }
+
+  /* GRID */
+  .grid-section-title {
+    font-family: 'Bebas Neue', sans-serif; font-size: 1.6rem; letter-spacing: 0.05em;
+    margin-bottom: 1.2rem; color: var(--text); border-left: 3px solid var(--red); padding-left: 0.6rem;
+    display: flex; align-items: center; gap: 1rem;
+  }
+  .grid-loader { font-size: 0.8rem; color: var(--muted); font-family: 'DM Sans', sans-serif; font-weight: 400; letter-spacing: 0; }
+
+  .movies-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 1.8rem;
+    margin-bottom: 3rem;
+  }
+
+  /* MOVIE CARD */
+  .movie-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    overflow: hidden; cursor: pointer;
+    transition: transform 0.25s cubic-bezier(0.2,0.8,0.2,1), border-color 0.2s, box-shadow 0.2s;
+    display: flex; flex-direction: column; position: relative;
+  }
+  .movie-card:hover { transform: translateY(-8px); border-color: var(--border-hover); box-shadow: 0 10px 20px rgba(0,0,0,0.5); }
+  .movie-card.loading-streams { opacity: 0.7; pointer-events: none; }
+
+  .poster-wrap { position: relative; aspect-ratio: 2/3; width: 100%; background: var(--surface2); overflow: hidden; }
+  .poster-img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s ease; }
+  .movie-card:hover .poster-img { transform: scale(1.05); }
+
+  /* Format badge */
+  .format-badge {
+    position: absolute; top: 8px; right: 8px;
+    font-size: 0.62rem; font-weight: 700; letter-spacing: 0.06em;
+    padding: 2px 7px; border-radius: 4px;
+    backdrop-filter: blur(4px);
+  }
+  .format-badge.mp4  { background: rgba(15,157,88,0.85); border: 1px solid rgba(15,157,88,0.6); color: #fff; }
+  .format-badge.mkv  { background: rgba(229,9,20,0.85);  border: 1px solid rgba(229,9,20,0.6);  color: #fff; }
+  .format-badge.webm { background: rgba(26,115,232,0.85); border: 1px solid rgba(26,115,232,0.6); color: #fff; }
+  .format-badge.loading { background: rgba(0,0,0,0.6); border: 1px solid var(--border-hover); color: var(--muted); }
+  .format-badge.none { background: rgba(0,0,0,0.6); border: 1px solid var(--border-hover); color: var(--muted2); }
+
+  .card-overlay-btn {
+    position: absolute; inset: 0; background: rgba(0,0,0,0.6);
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; transition: opacity 0.2s ease;
+  }
+  .movie-card:hover .card-overlay-btn { opacity: 1; }
+  .play-badge {
+    background: var(--red); color: #fff; font-size: 0.8rem; font-weight: 600;
+    padding: 0.5rem 1rem; border-radius: 20px;
+    transform: translateY(10px); transition: transform 0.2s ease;
+  }
+  .movie-card:hover .play-badge { transform: translateY(0); }
+
+  /* Stream picker modal */
+  .stream-modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+    z-index: 200; display: flex; align-items: center; justify-content: center;
+    padding: 1rem; opacity: 0; pointer-events: none; transition: opacity 0.2s;
+  }
+  .stream-modal-overlay.open { opacity: 1; pointer-events: all; }
+  .stream-modal {
+    background: var(--surface); border: 1px solid var(--border-hover);
+    border-radius: 14px; padding: 1.8rem; width: 100%; max-width: 520px;
+    max-height: 80vh; overflow-y: auto;
+    transform: scale(0.95); transition: transform 0.2s;
+  }
+  .stream-modal-overlay.open .stream-modal { transform: scale(1); }
+  .stream-modal h3 { font-family: 'Bebas Neue', sans-serif; font-size: 1.6rem; letter-spacing: 0.04em; margin-bottom: 0.3rem; }
+  .stream-modal-sub { font-size: 0.82rem; color: var(--muted); margin-bottom: 1.2rem; }
+  .stream-list { display: flex; flex-direction: column; gap: 0.6rem; }
+  .stream-item {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 0.8rem 1rem;
+    display: flex; align-items: center; gap: 0.8rem;
+    cursor: pointer; transition: border-color 0.15s, background 0.15s;
+  }
+  .stream-item:hover { border-color: var(--red); background: rgba(229,9,20,0.06); }
+  .stream-fmt {
+    font-size: 0.65rem; font-weight: 700; letter-spacing: 0.06em;
+    padding: 2px 7px; border-radius: 4px; flex-shrink: 0;
+  }
+  .stream-fmt.mp4  { background: rgba(15,157,88,0.2);  color: #4caf50; border: 1px solid rgba(15,157,88,0.3); }
+  .stream-fmt.mkv  { background: rgba(229,9,20,0.2);   color: #ff6b6b; border: 1px solid rgba(229,9,20,0.3); }
+  .stream-fmt.webm { background: rgba(26,115,232,0.2); color: #64b5f6; border: 1px solid rgba(26,115,232,0.3); }
+  .stream-fmt.other { background: rgba(255,255,255,0.05); color: var(--muted); border: 1px solid var(--border); }
+  .stream-info { flex: 1; min-width: 0; }
+  .stream-name { font-size: 0.85rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stream-meta { font-size: 0.72rem; color: var(--muted); margin-top: 0.15rem; }
+  .stream-quality {
+    font-size: 0.7rem; font-weight: 600; color: var(--imdb-gold);
+    background: rgba(245,197,24,0.1); border: 1px solid rgba(245,197,24,0.2);
+    padding: 1px 6px; border-radius: 4px; flex-shrink: 0;
+  }
+  .stream-play-btn {
+    background: var(--red); border: none; border-radius: 6px;
+    color: #fff; font-size: 0.75rem; font-weight: 600;
+    padding: 0.35rem 0.8rem; cursor: pointer; flex-shrink: 0;
+    transition: background 0.15s;
+  }
+  .stream-play-btn:hover { background: var(--red-dark); }
+  /* Stream item with potential audio issues */
+  .stream-item-warn { border-color: rgba(229,9,20,0.2) !important; }
+  .stream-item-warn:hover { border-color: rgba(229,9,20,0.5) !important; }
+  .stream-modal-close {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--muted); padding: 0.6rem 1rem;
+    font-family: 'DM Sans', sans-serif; font-size: 0.85rem;
+    cursor: pointer; width: 100%; margin-top: 1rem;
+    transition: color 0.15s;
+  }
+  .stream-modal-close:hover { color: var(--text); }
+
+  .movie-details { padding: 0.9rem; display: flex; flex-direction: column; flex: 1; }
+  .movie-title { font-size: 0.9rem; font-weight: 600; margin-bottom: 0.3rem; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .movie-meta-row { display: flex; align-items: center; justify-content: space-between; font-size: 0.75rem; color: var(--muted); margin-top: auto; }
+  .movie-rating { display: flex; align-items: center; gap: 0.25rem; color: var(--text); font-weight: 500; }
+  .rating-star { color: var(--imdb-gold); }
+
+  /* Status/skeleton */
+  .status-message { grid-column: 1/-1; text-align: center; padding: 3rem 1rem; color: var(--muted); font-size: 0.95rem; }
+  .skeleton-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .skeleton-poster { aspect-ratio: 2/3; background: linear-gradient(90deg, var(--surface2) 25%, #222 50%, var(--surface2) 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; }
+  .skeleton-details { padding: 0.9rem; }
+  .skeleton-line { height: 12px; background: var(--surface2); border-radius: 4px; margin-bottom: 0.5rem; animation: shimmer 1.5s infinite; }
+  .skeleton-line.short { width: 60%; }
+  @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+
+  /* Local movies section */
+  .local-section { margin-bottom: 3rem; }
+  .local-add-btn {
+    display: flex; align-items: center; gap: 0.5rem;
+    background: var(--surface); border: 1px dashed var(--border-hover);
+    border-radius: 10px; color: var(--muted); padding: 1rem;
+    cursor: pointer; font-family: 'DM Sans', sans-serif; font-size: 0.85rem;
+    aspect-ratio: 2/3; flex-direction: column; justify-content: center;
+    text-align: center; transition: border-color 0.2s, color 0.2s;
+  }
+  .local-add-btn:hover { border-color: var(--red); color: var(--text); }
+
+  @media (max-width: 768px) {
+    .topbar { padding: 0 1rem; }
+    .library-container { padding: calc(var(--topbar-h) + 1.5rem) 1rem 2rem 1rem; }
+    .library-header h1 { font-size: 2.3rem; }
+    .movies-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 1rem; }
+    .movie-title { font-size: 0.82rem; }
+    .movie-details { padding: 0.6rem; }
+    .source-btn span { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a class="logo-sm" href="index.html">Stream<span>Together</span></a>
+  <div class="topbar-right">
+    <div class="source-toggle">
+      <button class="source-btn active" data-source="stremio">🌐 <span>Stremio</span></button>
+      <button class="source-btn" data-source="local">📁 <span>Local</span></button>
+    </div>
+  </div>
+</div>
+
+<div class="library-container">
+  <div class="library-header">
+    <h1>Movie Library</h1>
+    <p id="librarySubtitle">Browse millions of movies — powered by Cinemeta & Torrentio</p>
+    <div class="search-wrapper">
+      <input type="text" class="search-input" id="librarySearchInput" placeholder="Search movies..." autocomplete="off">
+      <button class="btn-search" id="searchBtn">Search</button>
+    </div>
+  </div>
+
+  <!-- Genre filters (Stremio mode) -->
+  <!-- Content type toggle -->
+  <div style="display:flex;justify-content:center;gap:0.5rem;margin-bottom:1rem;">
+    <button class="genre-pill active" id="typeMovies" onclick="setContentType('movie')">🎬 Movies</button>
+    <button class="genre-pill" id="typeSeries" onclick="setContentType('series')">📺 Series</button>
+  </div>
+
+  <div class="genre-filters" id="genreFilters">
+    <button class="genre-pill active" data-genre="">All</button>
+    <button class="genre-pill" data-genre="action">💥 Action</button>
+    <button class="genre-pill" data-genre="comedy">😂 Comedy</button>
+    <button class="genre-pill" data-genre="drama">🎭 Drama</button>
+    <button class="genre-pill" data-genre="horror">😱 Horror</button>
+    <button class="genre-pill" data-genre="scifi">🚀 Sci-Fi</button>
+    <button class="genre-pill" data-genre="romance">❤️ Romance</button>
+    <button class="genre-pill" data-genre="thriller">🕵️ Thriller</button>
+    <button class="genre-pill" data-genre="animation">🎨 Animation</button>
+  </div>
+
+  <!-- Episode picker modal (for series) -->
+  <div class="stream-modal-overlay" id="episodeModal">
+    <div class="stream-modal">
+      <h3 id="episodeModalTitle">Select Episode</h3>
+      <p class="stream-modal-sub" id="episodeModalSub">Choose a season and episode</p>
+      <div style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap;" id="seasonTabs"></div>
+      <div class="stream-list" id="episodeList"></div>
+      <button class="stream-modal-close" id="episodeModalClose">Cancel</button>
+    </div>
+  </div>
+
+  <h2 class="grid-section-title" id="gridTitle">
+    Popular Now
+    <span class="grid-loader" id="gridLoader"></span>
+  </h2>
+  <div class="movies-grid" id="moviesGrid"></div>
+</div>
+
+<!-- Stream picker modal -->
+<div class="stream-modal-overlay" id="streamModal">
+  <div class="stream-modal">
+    <h3 id="streamModalTitle">Pick a Stream</h3>
+    <p class="stream-modal-sub" id="streamModalSub">Choose a quality. Green = MP4 (plays in browser). Red = MKV (needs conversion).</p>
+    <div class="stream-list" id="streamList"></div>
+    <button class="stream-modal-close" id="streamModalClose">Cancel</button>
+  </div>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════
+    CONFIG
+══════════════════════════════════════════════ */
+const CINEMETA_BASE  = 'https://v3-cinemeta.strem.io';
+
+// Your local movies — add entries here whenever you put a file in /movies/
+const LOCAL_MOVIES = [
+  {
+    title: 'Call of My Life',
+    year: 2024,
+    rating: 8.0,
+    poster: 'posters/sample-mp4.jpg',
+    file: 'movies/callofmylife.mp4'
+  }
+  // Add more:
+  // { title: 'Movie Name', year: 2023, rating: 7.5, poster: 'posters/name.jpg', file: 'movies/name.mp4' }
+];
+
+/* ══════════════════════════════════════════════
+    STATE
+══════════════════════════════════════════════ */
+let currentSource  = 'stremio'; // 'stremio' | 'local'
+let currentGenre   = '';
+let currentSearch  = '';
+let selectedMovie  = null;
+let contentType    = 'movie'; // 'movie' | 'series'
+// Mobile mode: hide huge/HEVC streams and sort lightest first
+let mobileMode     = localStorage.getItem('st_mobile_mode') !== 'false';
+// Remembered so the mobile toggle can re-render without refetching
+let currentPickerId    = null;
+let currentPickerMovie = null;
+
+const moviesGrid    = document.getElementById('moviesGrid');
+const searchInput   = document.getElementById('librarySearchInput');
+const gridTitle     = document.getElementById('gridTitle').childNodes[0];
+const gridLoader    = document.getElementById('gridLoader');
+const streamModal   = document.getElementById('streamModal');
+const streamList    = document.getElementById('streamList');
+
+/* ══════════════════════════════════════════════
+    SOURCE TOGGLE
+══════════════════════════════════════════════ */
+document.querySelectorAll('.source-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.source-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentSource = btn.dataset.source;
+    currentSearch = '';
+    searchInput.value = '';
+    document.getElementById('genreFilters').style.display = currentSource === 'stremio' ? 'flex' : 'none';
+    document.getElementById('librarySubtitle').textContent = currentSource === 'stremio'
+      ? 'Browse millions of movies — powered by Cinemeta & Torrentio'
+      : 'Your locally saved movies';
+    if (currentSource === 'stremio') loadStremio();
+    else renderLocalMovies();
+  });
+});
+
+/* ══════════════════════════════════════════════
+    GENRE PILLS
+══════════════════════════════════════════════ */
+document.querySelectorAll('.genre-pill').forEach(pill => {
+  pill.addEventListener('click', () => {
+    document.querySelectorAll('.genre-pill').forEach(p => p.classList.remove('active'));
+    pill.classList.add('active');
+    currentGenre  = pill.dataset.genre;
+    currentSearch = '';
+    searchInput.value = '';
+    loadStremio();
+  });
+});
+
+/* ══════════════════════════════════════════════
+    SEARCH
+══════════════════════════════════════════════ */
+document.getElementById('searchBtn').addEventListener('click', doSearch);
+searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+searchInput.addEventListener('input',   () => { if (!searchInput.value.trim()) { currentSearch = ''; if (currentSource === 'stremio') loadStremio(); else renderLocalMovies(); } });
+
+function doSearch() {
+  currentSearch = searchInput.value.trim();
+  if (!currentSearch) return;
+  if (currentSource === 'stremio') searchCinemeta(currentSearch);
+  else {
+    const q = currentSearch.toLowerCase();
+    renderCards(LOCAL_MOVIES.filter(m => m.title.toLowerCase().includes(q)), 'local');
+  }
+}
+
+/* ══════════════════════════════════════════════
+    CINEMETA — fetch movie catalogue
+══════════════════════════════════════════════ */
+/* ── Content type toggle ── */
+function setContentType(type) {
+  contentType = type;
+  currentGenre  = '';
+  currentSearch = '';
+  searchInput.value = '';
+  document.querySelectorAll('.genre-pill[data-genre]').forEach(p => p.classList.remove('active'));
+  document.querySelector('.genre-pill[data-genre=""]').classList.add('active');
+  document.getElementById('typeMovies').classList.toggle('active', type === 'movie');
+  document.getElementById('typeSeries').classList.toggle('active', type === 'series');
+  const typeLabel = type === 'movie' ? 'Movies' : 'Series';
+  document.getElementById('librarySubtitle').textContent =
+    `Browse ${typeLabel} — powered by Cinemeta`;
+  loadStremio();
+}
+
+async function loadStremio() {
+  setLoading(true);
+  const typeLabel = contentType === 'series' ? 'Series' : 'Movies';
+  gridTitle.textContent = currentGenre
+    ? `${capitaliseGenre(currentGenre)} ${typeLabel}`
+    : `Popular ${typeLabel}`;
+
+  try {
+    let url;
+    const catalogType = contentType === 'series' ? 'series' : 'movie';
+    if (currentGenre) {
+      url = `${CINEMETA_BASE}/catalog/${catalogType}/top/genre=${encodeURIComponent(capitaliseGenre(currentGenre))}.json`;
+    } else {
+      url = `${CINEMETA_BASE}/catalog/${catalogType}/top.json`;
+    }
+    const res  = await fetch(url);
+    const data = await res.json();
+    renderCards(data.metas || [], 'stremio');
+  } catch (e) {
+    console.error('Cinemeta fetch failed:', e);
+    showError('Could not load content — check your internet connection.');
+  }
+  setLoading(false);
+}
+
+async function searchCinemeta(query) {
+  setLoading(true);
+  gridTitle.textContent = `Results for "${query}"`;
+  try {
+    const catalogType = contentType === 'series' ? 'series' : 'movie';
+    const url  = `${CINEMETA_BASE}/catalog/${catalogType}/top/search=${encodeURIComponent(query)}.json`;
+    const res  = await fetch(url);
+    const data = await res.json();
+    renderCards(data.metas || [], 'stremio');
+  } catch (e) {
+    showError('Search failed — try again.');
+  }
+  setLoading(false);
+}
+
+function capitaliseGenre(g) {
+  const map = { scifi: 'Sci-Fi', action: 'Action', comedy: 'Comedy', drama: 'Drama', horror: 'Horror', romance: 'Romance', thriller: 'Thriller', animation: 'Animation' };
+  return map[g] || g.charAt(0).toUpperCase() + g.slice(1);
+}
+
+/* ══════════════════════════════════════════════
+    RENDER CARDS
+══════════════════════════════════════════════ */
+function renderCards(movies, source) {
+  clearBadgeQueue();          // abandon badge work for the previous grid
+  moviesGrid.innerHTML = '';
+
+  if (!movies || movies.length === 0) {
+    moviesGrid.innerHTML = `<div class="status-message">No movies found. Try a different search or genre.</div>`;
+    return;
+  }
+
+  movies.slice(0, 60).forEach(movie => {
+    const card = document.createElement('div');
+    card.className = 'movie-card';
+
+    if (source === 'stremio') {
+      const poster  = movie.poster || movie.background || '';
+      const title   = escapeHTML(movie.name || movie.title || 'Unknown');
+      const year    = movie.year || movie.releaseInfo || '';
+      const rating  = movie.imdbRating ? parseFloat(movie.imdbRating).toFixed(1) : (movie.rating ? parseFloat(movie.rating).toFixed(1) : 'N/A');
+
+      card.innerHTML = `
+        <div class="poster-wrap">
+          <img class="poster-img" src="${escapeHTML(poster)}" alt="${title}" loading="lazy" onerror="this.src='${FALLBACK_POSTER}'">
+          <span class="format-badge loading" id="fmt_${movie.id}">…</span>
+          <div class="card-overlay-btn"><span class="play-badge">▶ Watch</span></div>
+        </div>
+        <div class="movie-details">
+          <h3 class="movie-title" title="${title}">${title}</h3>
+          <div class="movie-meta-row">
+            <span>${year}</span>
+            <span class="movie-rating"><span class="rating-star">★</span> ${rating}</span>
+          </div>
+        </div>
+      `;
+
+      card.addEventListener('click', () => {
+        if (contentType === 'series') {
+          openEpisodePicker(movie);
+        } else {
+          openStreamPicker(movie);
+        }
+      });
+
+      // Lazy-load the best format badge without blocking the UI
+      queueBadgeFetch(movie.id);
+
+    } else {
+      // Local movie
+      const posterUrl = movie.poster || FALLBACK_POSTER;
+      const fmt       = (movie.file.split('.').pop() || 'mp4').toLowerCase();
+      const fmtClass  = ['mp4','webm'].includes(fmt) ? fmt : 'mkv';
+      const rating    = movie.rating ? movie.rating.toFixed(1) : 'N/A';
+
+      card.innerHTML = `
+        <div class="poster-wrap">
+          <img class="poster-img" src="${escapeHTML(posterUrl)}" alt="${escapeHTML(movie.title)}" loading="lazy" onerror="this.src='${FALLBACK_POSTER}'">
+          <span class="format-badge ${fmtClass}">${fmt.toUpperCase()}</span>
+          <div class="card-overlay-btn"><span class="play-badge">▶ Watch</span></div>
+        </div>
+        <div class="movie-details">
+          <h3 class="movie-title" title="${escapeHTML(movie.title)}">${escapeHTML(movie.title)}</h3>
+          <div class="movie-meta-row">
+            <span>${movie.year || ''}</span>
+            <span class="movie-rating"><span class="rating-star">★</span> ${rating}</span>
+          </div>
+        </div>
+      `;
+
+      card.addEventListener('click', () => launchRoom(movie.file, movie.title));
+    }
+
+    moviesGrid.appendChild(card);
+  });
+}
+
+/* ══════════════════════════════════════════════
+    LOCAL MOVIES
+══════════════════════════════════════════════ */
+function renderLocalMovies() {
+  gridTitle.textContent = 'Your Local Movies';
+  renderCards(LOCAL_MOVIES, 'local');
+}
+
+/* ══════════════════════════════════════════════
+    STREAM SOURCES — Torrentio + AIOStreams in parallel
+    AIOStreams aggregates Comet + Jackettio + Sootio with
+    Real-Debrid already applied — one URL covers all three.
+══════════════════════════════════════════════ */
+const TORRENTIO_BASE  = 'https://torrentio.strem.fun';
+// Server-side proxy — avoids CORS and routes via Vercel's datacenter,
+// which reaches Torrentio far more reliably than a remote browser does.
+const NUVIO_BASE      = 'https://nuviostreamsaddon-production.up.railway.app/providers=vidzee,vidsrc,vixsrc,mp4hydra,topmovies';
+// Single proxy endpoint serves both sources via ?source=
+const TORRENTIO_PROXY = '/api/torrentio';
+
+// Cache per imdbId — stores merged results from all sources
+const streamCache = {};
+
+// Source labels so user knows where each result came from
+const SOURCE_LABELS = {
+  torrentio: { label: 'Torrentio', color: '#f4b400' },
+  nuvio:     { label: 'Nuvio ✅',  color: '#22c55e' }   // direct HTTP — no RD needed
+};
+
+/* Fetch streams from a single source safely — never throws */
+// Records why the last fetch failed, so the UI can explain itself
+let lastFetchError = null;
+// Per-source outcome: 'ok' | 'empty' | 'down'
+const sourceStatus = {};
+
+async function fetchFromSource(url, sourceName) {
+  lastFetchError = null;
+  sourceStatus[sourceName] = 'down';
+  console.log(`[${sourceName}] GET ${url}`);
+  try {
+    const controller = new AbortController();
+    const timeout    = setTimeout(() => controller.abort(), 30000); // must exceed proxy budget
+    const res  = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`;
+      try {
+        const err = await res.json();
+        if (err.rateLimited || res.status === 429) {
+          sourceStatus[sourceName] = 'ratelimited';
+          lastFetchError = `${sourceName} is rate limiting — wait ~30s and try again`;
+          console.warn(`[${sourceName}] rate limited`);
+          return [];
+        }
+        if (err._attempts) {
+          detail = err._attempts
+            .map(a => `${a.mirror.replace('https://','')}: ${a.error}`)
+            .join(' | ');
+          console.warn(`[${sourceName}] upstream attempts:`, err._attempts);
+        } else if (err.error) {
+          detail = err.error;
+        }
+      } catch (_) {}
+      lastFetchError = detail;
+      console.warn(`[${sourceName}] ${detail}`);
+      return [];
+    }
+
+    const data = await res.json();
+    const streams = (data.streams || []).map(s => ({ ...s, _source: sourceName }));
+
+    if (data._mirror) console.log(`[${sourceName}] answered by ${data._mirror} in ${data._ms}ms`);
+    console.log(`[${sourceName}] ${streams.length} streams returned`);
+
+    sourceStatus[sourceName] = streams.length > 0 ? 'ok' : 'empty';
+
+    if (streams.length === 0) {
+      lastFetchError = data._attempts
+        ? `All mirrors failed — ${data._attempts.map(a => `${a.mirror.replace('https://','')}: ${a.error}`).join(' | ')}`
+        : `${sourceName} responded OK but had no streams for this title`;
+    }
+    return streams;
+
+  } catch (e) {
+    // Distinguish the failure modes — they need different fixes
+    if (e.name === 'AbortError') {
+      lastFetchError = `${sourceName} timed out after 30s (proxy unreachable)`;
+    } else if (e instanceof TypeError) {
+      // fetch() throws TypeError for both CORS blocks and network failures
+      lastFetchError = `${sourceName} unreachable — blocked by CORS, offline, or DNS failure`;
+    } else {
+      lastFetchError = `${sourceName} error: ${e.message}`;
+    }
+    console.warn(`[${sourceName}] ${lastFetchError}`, e);
+    return [];
+  }
+}
+
+/* Fetch from Torrentio + AIOStreams + Nuvio in parallel */
+async function fetchAllStreams(imdbId) {
+  if (streamCache[imdbId]) return streamCache[imdbId];
+
+  console.log(`[Streams] Fetching from all sources for ${imdbId}…`);
+
+  // Query both sources in parallel — one being down no longer empties the picker
+  const [torrentioStreams, nuvioStreams] = await Promise.all([
+    fetchFromSource(`${TORRENTIO_PROXY}?source=torrentio&type=movie&id=${encodeURIComponent(imdbId)}`, 'torrentio'),
+    fetchFromSource(`${TORRENTIO_PROXY}?source=nuvio&type=movie&id=${encodeURIComponent(imdbId)}`, 'nuvio')
+  ]);
+
+  // Nuvio first — direct HTTP links play without going through Real-Debrid
+  const seen   = new Set();
+  const merged = [];
+  for (const stream of [...nuvioStreams, ...torrentioStreams]) {
+    const key = stream.infoHash || stream.url || (stream.name + (stream.title || ''));
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    merged.push(stream);
+  }
+
+  console.log(`[Streams] ${merged.length} total — Nuvio: ${nuvioStreams.length}, Torrentio: ${torrentioStreams.length}`);
+
+  streamCache[imdbId] = merged;
+  return merged;
+}
+
+/* ── Stream name parsing helpers ── */
+
+/* ── Stream parsing helpers ──
+   Torrentio packs ALL detail into stream.description (multiline):
+   Line 1: full torrent filename  e.g. "Movie.2024.2160p.BluRay.DTS.x265-GROUP"
+   Line 2: emoji meta            e.g. "💾 28.6 GB · 👤 45 · ⚙️ zurg"
+   stream.name is the SHORT label e.g. "Torrentio 4k DV | HDR"
+   We parse BOTH to get the full picture.
+*/
+
+/* Get the full detail string — prefer description, fall back to title */
+function getFullDetail(stream) {
+  // Concatenate ALL fields — codec/audio info can be in any of them
+  // depending on which addon returned the stream
+  return [
+    stream.description || '',
+    stream.title || '',
+    stream.name || '',
+    stream.behaviorHints?.filename || '',
+    stream.behaviorHints?.bingeGroup || ''
+  ].join(' ').toUpperCase();
+}
+
+/* Get display name — use name for the heading, description line 1 as subtitle */
+function getStreamDisplayName(stream) {
+  const name = stream.name || '';
+  // description line 1 is usually the full torrent filename
+  const descLines = (stream.description || stream.title || '').split('\n').map(l => l.trim()).filter(Boolean);
+  const filename  = descLines[0] || '';
+  return { name, filename };
+}
+
+/* Parse format from full detail string */
+function getMagnetFmt(stream) {
+  const full = getFullDetail(stream) + (stream.behaviorHints?.filename || '').toUpperCase();
+  if (full.includes('.MP4')  || full.includes('MP4'))  return 'mp4';
+  if (full.includes('.WEBM') || full.includes('WEBM')) return 'webm';
+  if (full.includes('.MKV')  || full.includes('MKV'))  return 'mkv';
+  if (full.includes('.AVI')  || full.includes('AVI'))  return 'mkv';
+  return 'mkv';
+}
+
+/* Parse quality from name or full detail */
+function getQualityLabel(stream) {
+  const full = (stream.name || '') + ' ' + getFullDetail(stream);
+  const match = full.match(/4K|2160[Pp]|1080[Pp]|720[Pp]|480[Pp]|360[Pp]/i);
+  return match ? match[0].toUpperCase().replace('P','p') : '';
+}
+
+/* Quality rank for sorting */
+function getQualityRank(stream) {
+  const q = getQualityLabel(stream).toUpperCase();
+  const ranks = { '4K': 5, '2160P': 5, '1080P': 4, '720P': 3, '480P': 2, '360P': 1 };
+  return ranks[q] || 2;
+}
+
+/* Parse video codec from full detail string */
+function getVideoCodec(stream) {
+  const full = getFullDetail(stream);
+  if (full.includes('X265') || full.includes('X.265') ||
+      full.includes('H265') || full.includes('H.265') ||
+      full.includes('HEVC')) return { label: 'x265', safe: false };
+  if (full.includes('X264') || full.includes('X.264') ||
+      full.includes('H264') || full.includes('H.264') ||
+      full.includes('AVC'))  return { label: 'x264', safe: true };
+  if (full.includes('AV1'))  return { label: 'AV1',  safe: false }; // limited support
+  if (full.includes('VP9'))  return { label: 'VP9',  safe: true };
+  if (full.includes('XVID') || full.includes('DIVX')) return { label: 'XviD', safe: false };
+  return { label: '', safe: true }; // unknown — assume safe
+}
+
+/* Parse audio codec from full detail string */
+function getAudioInfo(stream) {
+  const full = getFullDetail(stream);
+  if (full.includes('TRUEHD'))  return { label: 'TrueHD', ok: true };
+  if (full.includes('ATMOS'))   return { label: 'Atmos',  ok: true };
+  if (full.includes('EAC3') || full.includes('E-AC3')) return { label: 'EAC3', ok: true };
+  if (full.includes('DTS-HD') || full.includes('DTSHD')) return { label: 'DTS-HD', ok: true };
+  if (full.includes('DTS'))     return { label: 'DTS',    ok: true };
+  if (full.includes('AC3') || full.includes('DD5.1') || full.includes('DD 5'))
+                                return { label: 'AC3',    ok: true };
+  if (full.includes('AAC'))     return { label: 'AAC',    ok: true };
+  if (full.includes('MP3'))     return { label: 'MP3',    ok: true };
+  if (full.includes('FLAC'))    return { label: 'FLAC',   ok: true };
+  if (full.includes('OPUS'))    return { label: 'Opus',   ok: true };
+  if (full.includes('MUTED') || full.includes('NO AUDIO') || full.includes('SILENT'))
+                                return { label: '🔇 No Audio', ok: false };
+  // CAM rips — bad or no audio. Catch all CAM variants
+  if (full.includes('CAMRIP') || full.includes('HDCAM') || full.includes('CAM.X') ||
+      full.includes('CAM-') || full.includes('.CAM.') || full.includes(' CAM ') ||
+      full.match(/\bCAM\b/))
+                                return { label: '⚠️ CAM', ok: false };
+  return { label: '', ok: true };
+}
+
+/* Parse file size — check stream.size first (bytes), then parse from description */
+function getSizeInfo(stream) {
+  if (stream.size && stream.size > 0) return formatBytes(stream.size);
+  // Parse from description/title — Torrentio format: "💾 28.6 GB" or "28.6 GB"
+  const desc = stream.description || stream.title || '';
+  const match = desc.match(/(\d+\.?\d*)\s*(GB|MB)/i);
+  if (match) return `${match[1]} ${match[2].toUpperCase()}`;
+  return '';
+}
+
+/* Parse seeder count from description — "👤 45" */
+function getSeederInfo(stream) {
+  if (stream.seeders) return stream.seeders;
+  const desc = stream.description || stream.title || '';
+  const match = desc.match(/👤\s*(\d+)/);
+  return match ? parseInt(match[1]) : 0;
+}
+
+/* Is this stream comfortable on a phone?
+   Two things matter: file size (bandwidth + buffering) and codec
+   (H.264 decodes on every device, HEVC needs GPU support). */
+const MOBILE_MAX_BYTES = 2 * 1024 * 1024 * 1024;     // 2 GB ceiling
+
+/* Torrentio frequently omits the numeric `size` field and instead puts
+   the size in its description text as "💾 8.4 GB". Reading only
+   stream.size meant those streams reported 0 and skipped every size
+   check — which is why huge files kept reaching the top of the list. */
+function parseSizeBytes(stream) {
+  if (stream.size && stream.size > 0) return stream.size;
+
+  const text  = `${stream.description || ''} ${stream.title || ''} ${stream.name || ''}`;
+  const match = text.match(/(\d+(?:\.\d+)?)\s*(GB|MB)/i);
+  if (!match) return 0;
+
+  const value = parseFloat(match[1]);
+  return match[2].toUpperCase() === 'GB'
+    ? value * 1024 * 1024 * 1024
+    : value * 1024 * 1024;
+}
+
+function isMobileFriendly(stream) {
+  const size = parseSizeBytes(stream);
+  if (size > 0 && size > MOBILE_MAX_BYTES) return false;
+
+  const full = getFullDetail(stream);
+  // HEVC/x265 shows a black screen on phones without hardware decoding
+  if (/X265|H\.?265|HEVC/.test(full)) return false;
+  // 4K is pointless on a phone and enormous
+  if (/2160P|\b4K\b/.test(full)) return false;
+  // Remux and BluRay full-disc rips are always far too large
+  if (/REMUX|BDREMUX|BLURAY DISC|COMPLETE\.BLURAY/.test(full)) return false;
+
+  return true;
+}
+
+/* Lower score = better for mobile. Used for sorting. */
+function mobileScore(stream) {
+  const parsed = parseSizeBytes(stream);
+  const size   = parsed > 0 ? parsed : Infinity;
+  const full = getFullDetail(stream);
+  let score = size;
+
+  // Nudge H.264 ahead of same-size alternatives
+  if (/X264|H\.?264|AVC/.test(full)) score *= 0.8;
+  // 720p is the sweet spot on a phone screen
+  if (/720P/.test(full)) score *= 0.85;
+  // Penalise anything that needs GPU decoding
+  if (/X265|H\.?265|HEVC/.test(full)) score *= 3;
+
+  return score;
+}
+
+/* Get streamable URL */
+function getStreamUrl(stream) {
+  if (stream.url) return stream.url;
+  if (stream.infoHash) return `magnet:?xt=urn:btih:${stream.infoHash}`;
+  return null;
+}
+
+/* Fetch best format badge for a movie card (lightweight — only checks) */
+/* ══════════════════════════════════════════════
+    BADGE PREFETCH QUEUE
+    Rendering 60 cards used to fire 60 Torrentio requests at once,
+    which trips rate limiting before the user clicks anything.
+    Requests are now queued and spaced out, and the queue is
+    cleared whenever the grid changes so we never prefetch
+    badges for cards that have scrolled away.
+══════════════════════════════════════════════ */
+const BADGE_CONCURRENCY = 2;      // simultaneous badge requests
+const BADGE_GAP_MS      = 400;    // pause between requests
+
+let badgeQueue    = [];
+let badgeActive   = 0;
+let badgeQueueRun = 0;            // increments to invalidate an old queue
+
+function clearBadgeQueue() {
+  badgeQueue = [];
+  badgeQueueRun++;
+}
+
+function queueBadgeFetch(imdbId) {
+  if (!imdbId) return;
+  badgeQueue.push({ imdbId, run: badgeQueueRun });
+  pumpBadgeQueue();
+}
+
+function pumpBadgeQueue() {
+  while (badgeActive < BADGE_CONCURRENCY && badgeQueue.length) {
+    const job = badgeQueue.shift();
+    if (job.run !== badgeQueueRun) continue;   // stale — grid moved on
+    badgeActive++;
+    fetchBestFormat(job.imdbId).finally(() => {
+      badgeActive--;
+      setTimeout(pumpBadgeQueue, BADGE_GAP_MS);
+    });
+  }
+}
+
+async function fetchBestFormat(imdbId) {
+  if (!imdbId) return;
+
+  // Already fetched this title — reuse it, no request needed
+  if (streamCache[imdbId]) {
+    applyBadge(imdbId, streamCache[imdbId]);
+    return;
+  }
+
+  try {
+    const url = `${TORRENTIO_PROXY}?source=torrentio&type=movie&id=${encodeURIComponent(imdbId)}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+
+    // Rate limited — back off and let the badge stay neutral
+    if (res.status === 429) {
+      console.warn('[badge] rate limited, backing off');
+      badgeQueue = [];                       // drop pending badge work
+      const badge = document.getElementById('fmt_' + imdbId);
+      if (badge) { badge.textContent = '—'; badge.className = 'format-badge none'; }
+      return;
+    }
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const data    = await res.json();
+    const streams = (data.streams || []).map(s => ({ ...s, _source: 'torrentio' }));
+    streamCache[imdbId] = streams;
+    applyBadge(imdbId, streams);
+
+  } catch (e) {
+    const badge = document.getElementById('fmt_' + imdbId);
+    if (badge) { badge.textContent = '—'; badge.className = 'format-badge none'; }
+  }
+}
+
+function applyBadge(imdbId, streams) {
+  const badge = document.getElementById('fmt_' + imdbId);
+  if (!badge) return;
+
+  if (!streams.length) {
+    badge.textContent = 'N/A'; badge.className = 'format-badge none'; return;
+  }
+  const has4k   = streams.some(s => getQualityLabel(s) === '4K');
+  const has1080 = streams.some(s => getQualityLabel(s) === '1080P');
+
+  if (has4k)        { badge.textContent = '4K'; badge.className = 'format-badge mp4'; }
+  else if (has1080) { badge.textContent = 'HD'; badge.className = 'format-badge mp4'; }
+  else              { badge.textContent = 'SD'; badge.className = 'format-badge mkv'; }
+}
+
+/* ══════════════════════════════════════════════
+    STREAM PICKER MODAL
+══════════════════════════════════════════════ */
+async function openStreamPicker(movie) {
+  selectedMovie = movie;
+  currentPickerId    = movie.id;
+  currentPickerMovie = movie;
+  document.getElementById('streamModalTitle').textContent = movie.name || movie.title;
+  document.getElementById('streamModalSub').textContent = '🔍 Searching Torrentio + Nuvio…';
+  streamList.innerHTML = `
+    <div style="color:var(--muted);font-size:0.85rem;padding:2rem 0;text-align:center;">
+      <div style="margin-bottom:0.5rem;font-size:1.5rem">⏳</div>
+      Searching Torrentio + Nuvio…
+    </div>`;
+  streamModal.classList.add('open');
+
+  try {
+    const streams = await fetchAllStreams(movie.id);
+
+    if (streams.length === 0) {
+      const label   = { torrentio: 'Torrentio', nuvio: 'Nuvio' };
+      const empty   = Object.keys(sourceStatus).filter(k => sourceStatus[k] === 'empty');
+      const down    = Object.keys(sourceStatus).filter(k => sourceStatus[k] === 'down');
+      const limited = Object.keys(sourceStatus).filter(k => sourceStatus[k] === 'ratelimited');
+
+      let reason;
+      if (limited.length) {
+        reason = `${limited.map(k => label[k] || k).join(' and ')} is rate limiting. Wait about 30 seconds, then try again.`;
+      } else
+      if (empty.length && !down.length) {
+        // Everything answered — the title genuinely has no sources
+        reason = `${empty.map(k => label[k] || k).join(' and ')} searched successfully but found nothing for this title. Try a more popular title.`;
+      } else if (empty.length && down.length) {
+        reason = `${empty.map(k => label[k] || k).join(', ')} found nothing for this title. ${down.map(k => label[k] || k).join(', ')} is unreachable.`;
+      } else if (down.length) {
+        reason = `${down.map(k => label[k] || k).join(' and ')} unreachable — ${lastFetchError || 'no response'}`;
+      } else {
+        reason = lastFetchError || 'No streams available for this title';
+      }
+      streamList.innerHTML = `
+        <div class="status-message">
+          No streams found.<br>
+          <span style="font-size:0.8rem;color:#ff6b6b;display:block;margin-top:0.5rem;">
+            ${escapeHTML(reason)}
+          </span>
+          <span style="font-size:0.75rem;color:var(--muted2);display:block;margin-top:0.7rem;">
+            IMDb ID: ${escapeHTML(movie.id || 'missing')}<br>
+            Open DevTools console for the full request log.
+          </span>
+        </div>`;
+      document.getElementById('streamModalSub').textContent = 'No streams found.';
+      return;
+    }
+
+    // Count by source for subtitle
+    const bySource = {};
+    streams.forEach(s => { bySource[s._source] = (bySource[s._source] || 0) + 1; });
+    const sourceSummary = Object.entries(bySource)
+      .map(([k, v]) => `${SOURCE_LABELS[k]?.label || k}: ${v}`)
+      .join(', ');
+
+    document.getElementById('streamModalSub').textContent =
+      `${streams.length} streams found (${sourceSummary}) — sorted by quality`;
+
+    streamList.innerHTML = '';
+    renderStreamItems(streams, movie);
+  } catch (e) {
+    console.error('Stream fetch failed:', e);
+    streamList.innerHTML = `<div class="status-message">Failed to fetch streams. Check your connection.</div>`;
+  }
+}
+
+/* Reusable stream item renderer — used by both movies and series */
+function renderStreamItems(streams, movie) {
+    // Filter: remove only streams with no URL, CAM rips, and tiny files (trailers)
+    const filtered = streams.filter(stream => {
+      const url = getStreamUrl(stream);
+      if (!url) return false;
+
+      // Remove tiny files likely to be trailers/samples
+      const size = stream.size || 0;
+      if (size > 0 && size < 50 * 1024 * 1024) return false;
+
+      // Remove CAM rips — bad audio/video quality
+      const full = getFullDetail(stream);
+      if (full.includes('CAMRIP') || full.includes('HDCAM') ||
+          full.includes('CAM.X') || full.includes('CAM-') ||
+          full.includes('.CAM.') || /\bCAM\b/.test(full)) return false;
+
+      // Remove explicitly muted/silent streams
+      if (full.includes('MUTED') || full.includes('NO AUDIO') ||
+          full.includes('SILENT')) return false;
+
+      // Remove trailer/sample keywords
+      const bad = ['TRAILER','SAMPLE','FEATURETTE','DELETED SCENE','EXTRAS','BONUS'];
+      if (bad.some(k => full.includes(k))) return false;
+
+      return true;
+    });
+
+    if (filtered.length === 0) {
+      streamList.innerHTML = `
+        <div class="status-message">
+          No streams found for this title.<br>
+          <span style="font-size:0.8rem;color:var(--muted2)">
+            Try a different movie or check back later.
+          </span>
+        </div>`;
+      return;
+    }
+
+    // In mobile mode: drop anything too big or HEVC, lightest first.
+    // Otherwise: best quality first, as before.
+    let working = filtered;
+    let hiddenCount = 0;
+
+    if (mobileMode) {
+      const mobileOk = filtered.filter(isMobileFriendly);
+      hiddenCount = filtered.length - mobileOk.length;
+      // If the filter leaves nothing, show everything rather than an empty list
+      working = mobileOk.length ? mobileOk : filtered;
+      if (!mobileOk.length) hiddenCount = 0;
+    }
+
+    const sorted = mobileMode
+      // Everything here already passed the phone-size filter, so rank by
+      // seeders — well-seeded torrents resolve faster and fail less on RD.
+      // Size only breaks ties between similarly-seeded streams.
+      ? [...working].sort((a, b) => {
+          const seedDiff = (getSeederInfo(b) || 0) - (getSeederInfo(a) || 0);
+          if (seedDiff !== 0) return seedDiff;
+          return mobileScore(a) - mobileScore(b);
+        })
+      : [...working].sort((a, b) => {
+          const qDiff = getQualityRank(b) - getQualityRank(a);
+          if (qDiff !== 0) return qDiff;
+          return (getSeederInfo(b) || 0) - (getSeederInfo(a) || 0);
+        });
+
+    renderModeBar(hiddenCount, filtered.length);
+
+    sorted.slice(0, 30).forEach(stream => {
+      const fmt         = getMagnetFmt(stream);
+      const quality     = getQualityLabel(stream);
+      const audio       = getAudioInfo(stream);
+      const sizeLabel   = getSizeInfo(stream);
+      const seeders     = getSeederInfo(stream);
+      const source      = SOURCE_LABELS[stream._source] || { label: stream._source, color: '#888' };
+      const { name, filename } = getStreamDisplayName(stream);
+      const displayName = name || 'Unknown source';
+      const subFilename = filename;
+      const streamUrl   = getStreamUrl(stream);
+
+      if (!streamUrl) return;
+
+      // Build badge row: RD cached + size + video codec + audio + seeders + source
+      const videoCodec = getVideoCodec(stream);
+      const badges = [];
+      if (isMobileFriendly(stream)) badges.push(
+        `<span style="background:rgba(34,197,94,0.15);border:1px solid rgba(34,197,94,0.35);border-radius:4px;padding:1px 7px;font-size:0.65rem;font-weight:700;color:#4ade80;" title="Small enough and H.264 — plays on any phone">📱 Phone OK</span>`
+      );
+      if (sizeLabel) badges.push(
+        `<span style="background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.14);border-radius:4px;padding:1px 7px;font-size:0.65rem;font-weight:700;color:#ddd;">💾 ${escapeHTML(sizeLabel)}</span>`
+      );
+      if (videoCodec.label) badges.push(
+        `<span style="background:${videoCodec.safe ? 'rgba(34,197,94,0.1)' : 'rgba(229,9,20,0.15)'};border:1px solid ${videoCodec.safe ? 'rgba(34,197,94,0.25)' : 'rgba(229,9,20,0.4)'};border-radius:4px;padding:1px 7px;font-size:0.65rem;font-weight:700;color:${videoCodec.safe ? '#4ade80' : '#ff6b6b'};" title="${videoCodec.safe ? 'Plays on all devices' : 'May show black screen on mobile/low-end devices'}">${escapeHTML(videoCodec.label)}</span>`
+      );
+      if (audio.label) badges.push(
+        `<span style="background:${audio.ok ? 'rgba(255,255,255,0.06)' : 'rgba(229,9,20,0.15)'};border:1px solid ${audio.ok ? 'rgba(255,255,255,0.12)' : 'rgba(229,9,20,0.4)'};border-radius:4px;padding:1px 7px;font-size:0.65rem;font-weight:700;color:${audio.ok ? '#aaa' : '#ff6b6b'};">${escapeHTML(audio.label)}</span>`
+      );
+      if (seeders) badges.push(
+        `<span style="color:var(--muted);font-size:0.65rem;">👥 ${seeders}</span>`
+      );
+      badges.push(
+        `<span style="color:${source.color};font-weight:600;font-size:0.65rem;">${escapeHTML(source.label)}</span>`
+      );
+
+      const item = document.createElement('div');
+      item.className = 'stream-item' + (!audio.ok ? ' stream-item-warn' : '');
+      item.innerHTML = `
+        <span class="stream-fmt ${fmt}">${fmt.toUpperCase()}</span>
+        <div class="stream-info">
+          <div class="stream-name">${escapeHTML(displayName)}</div>
+          ${filename && filename !== displayName
+            ? `<div style="font-size:0.7rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;">${escapeHTML(subFilename)}</div>`
+            : ''}
+          <div class="stream-meta" style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;margin-top:0.25rem;">
+            ${badges.join('')}
+          </div>
+        </div>
+        ${quality ? `<span class="stream-quality">${quality}</span>` : ''}
+        <button class="stream-play-btn" data-loading="false">▶ Play</button>
+      `;
+
+      const playBtn = item.querySelector('.stream-play-btn');
+
+      async function handleStreamClick(e) {
+        e.stopPropagation();
+        if (playBtn.dataset.loading === 'true') return;
+        playBtn.dataset.loading = 'true';
+        streamModal.classList.remove('open');
+
+        try {
+          let finalUrl;
+
+          if (stream._source === 'nuvio' && streamUrl.startsWith('http')) {
+            // Nuvio returns direct HTTP links — nothing to resolve
+            playBtn.textContent = '⏳ Loading…';
+            finalUrl = streamUrl;
+
+          } else if (isMagnet(streamUrl)) {
+            // Keep the button describing what's actually happening —
+            // resolution can take several seconds and silence feels broken
+            const setProgress = (msg) => { playBtn.textContent = `⏳ ${msg}`; };
+            setProgress('Resolving…');
+
+            // For a series episode, only try the stream that was actually
+            // clicked. Falling back to another magnet can silently resolve a
+            // season pack and play the wrong episode.
+            const isEpisode = /:\d+:\d+$/.test(String(movie.id || movie._streamId || ''));
+
+            let allMagnets;
+            if (isEpisode) {
+              allMagnets = [streamUrl];
+              console.log('[RD] Series episode — no magnet substitution');
+            } else {
+              allMagnets = (streamCache[movie.id] || streamCache[movie._streamId] || [])
+                .filter(s => s._source !== 'nuvio')
+                .map(s => getStreamUrl(s))
+                .filter(u => u && isMagnet(u));
+              const idx = allMagnets.indexOf(streamUrl);
+              if (idx > 0) { allMagnets.splice(idx, 1); allMagnets.unshift(streamUrl); }
+              else if (idx === -1) allMagnets.unshift(streamUrl);
+            }
+
+            // Escalate the wording if it's taking a while, so a slow
+            // uncached torrent doesn't look like a hang
+            const slowTimer = setTimeout(() => setProgress('Still working…'), 6000);
+            try {
+              finalUrl = await resolveWithRetry(allMagnets, setProgress);
+            } finally {
+              clearTimeout(slowTimer);
+            }
+          } else {
+            playBtn.textContent = '⏳ Resolving…';
+            finalUrl = await resolveStreamUrl(streamUrl);
+          }
+
+          if (!finalUrl) throw new Error('No playable URL returned');
+          launchRoom(finalUrl, movie.name || movie._fullTitle || movie.title);
+
+        } catch(err) {
+          console.error('Stream resolve failed:', err);
+          streamModal.classList.add('open');
+          playBtn.textContent = err.rateLimited ? '⏳ Rate limited' : '❌ Failed — retry';
+          playBtn.dataset.loading = 'false';
+          showStreamError(
+            err.rateLimited || err.authError
+              ? err.message
+              : err.exhausted
+                ? 'The streams tried were all rejected. Pick a different one — the list is sorted best-first.'
+                : err.message
+          );
+        }
+      }
+
+      playBtn.addEventListener('click', handleStreamClick);
+      item.addEventListener('click', (e) => { if (e.target !== playBtn) handleStreamClick(e); });
+      streamList.appendChild(item);
+    });
+}
+
+/* Toggle bar above the stream list — lets you flip between
+   phone-friendly picks and the full unfiltered list. */
+function renderModeBar(hiddenCount, totalCount) {
+  const existing = document.getElementById('streamModeBar');
+  if (existing) existing.remove();
+
+  const bar = document.createElement('div');
+  bar.id = 'streamModeBar';
+  bar.style.cssText =
+    'display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;' +
+    'padding:0.6rem 0.75rem;margin-bottom:0.75rem;border-radius:8px;' +
+    'background:var(--surface2);border:1px solid var(--border);';
+
+  const on = mobileMode;
+  bar.innerHTML = `
+    <button id="mobileToggle"
+      style="border:1px solid ${on ? 'rgba(34,197,94,0.4)' : 'var(--border-hover)'};
+             background:${on ? 'rgba(34,197,94,0.15)' : 'transparent'};
+             color:${on ? '#4ade80' : 'var(--muted)'};
+             border-radius:6px;padding:0.35rem 0.8rem;font-size:0.75rem;
+             font-weight:700;cursor:pointer;font-family:inherit;">
+      ${on ? '📱 Phone-friendly' : '🖥️ All streams'}
+    </button>
+    <span style="font-size:0.72rem;color:var(--muted);flex:1;min-width:150px;">
+      ${on
+        ? (hiddenCount > 0
+            ? `Smallest first · ${hiddenCount} large/HEVC stream${hiddenCount !== 1 ? 's' : ''} hidden`
+            : 'Smallest first · all streams shown')
+        : `Best quality first · ${totalCount} stream${totalCount !== 1 ? 's' : ''}`}
+    </span>`;
+
+  streamList.parentNode.insertBefore(bar, streamList);
+
+  document.getElementById('mobileToggle').addEventListener('click', () => {
+    mobileMode = !mobileMode;
+    localStorage.setItem('st_mobile_mode', String(mobileMode));
+    // Re-render from cache — no refetch needed
+    const cached = streamCache[currentPickerId];
+    if (cached) {
+      streamList.innerHTML = '';
+      renderStreamItems(cached, currentPickerMovie);
+    }
+  });
+}
+
+function showStreamError(msg) {
+  const existing = document.getElementById('streamErrorMsg');
+  if (existing) existing.remove();
+  const el = document.createElement('div');
+  el.id = 'streamErrorMsg';
+  el.style.cssText = 'color:#ff6b6b;font-size:0.82rem;padding:0.6rem 0;text-align:center;';
+  el.textContent = '⚠️ ' + msg;
+  streamList.insertBefore(el, streamList.firstChild);
+}
+
+
+document.getElementById('streamModalClose').addEventListener('click', () => streamModal.classList.remove('open'));
+streamModal.addEventListener('click', e => { if (e.target === streamModal) streamModal.classList.remove('open'); });
+
+/* ══════════════════════════════════════════════
+    SERIES — EPISODE PICKER
+══════════════════════════════════════════════ */
+let selectedSeason = 1;
+
+async function openEpisodePicker(series) {
+  selectedMovie = series;
+  const episodeModal = document.getElementById('episodeModal');
+  document.getElementById('episodeModalTitle').textContent = series.name || series.title;
+  document.getElementById('episodeModalSub').textContent = 'Loading episodes…';
+  document.getElementById('episodeList').innerHTML = '';
+  document.getElementById('seasonTabs').innerHTML = '';
+  episodeModal.classList.add('open');
+
+  try {
+    // Fetch series metadata from Cinemeta to get seasons/episodes
+    const res  = await fetch(`${CINEMETA_BASE}/meta/series/${series.id}.json`);
+    const data = await res.json();
+    const meta = data.meta;
+
+    if (!meta || !meta.videos || meta.videos.length === 0) {
+      document.getElementById('episodeModalSub').textContent = 'No episodes found.';
+      return;
+    }
+
+    // Group episodes by season — skip specials (season 0) and extras
+    const seasons = {};
+    meta.videos.forEach(ep => {
+      const s = ep.season;
+      // Skip season 0 (specials/extras) and episodes without a season number
+      if (!s || s === 0) return;
+      if (!seasons[s]) seasons[s] = [];
+      seasons[s].push(ep);
+    });
+
+    // If all episodes got filtered out, include season 0 as a fallback
+    if (Object.keys(seasons).length === 0) {
+      meta.videos.forEach(ep => {
+        const s = ep.season || 1;
+        if (!seasons[s]) seasons[s] = [];
+        seasons[s].push(ep);
+      });
+    }
+
+    const seasonNums = Object.keys(seasons).map(Number).sort((a,b) => a-b);
+    selectedSeason = seasonNums[0];
+
+    // Build season tabs
+    const seasonTabs = document.getElementById('seasonTabs');
+    seasonNums.forEach(s => {
+      const btn = document.createElement('button');
+      btn.className = 'genre-pill' + (s === selectedSeason ? ' active' : '');
+      btn.textContent = `S${s}`;
+      btn.addEventListener('click', () => {
+        selectedSeason = s;
+        document.querySelectorAll('#seasonTabs .genre-pill').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        renderEpisodes(seasons[s], series);
+      });
+      seasonTabs.appendChild(btn);
+    });
+
+    document.getElementById('episodeModalSub').textContent =
+      `${seasonNums.length} season${seasonNums.length !== 1 ? 's' : ''} · Click an episode to watch`;
+
+    renderEpisodes(seasons[selectedSeason], series);
+
+  } catch(e) {
+    console.error('Episode fetch failed:', e);
+    document.getElementById('episodeModalSub').textContent = 'Failed to load episodes.';
+  }
+}
+
+function renderEpisodes(episodes, series) {
+  const list = document.getElementById('episodeList');
+  list.innerHTML = '';
+
+  episodes.sort((a,b) => (a.episode||0) - (b.episode||0)).forEach(ep => {
+    const item = document.createElement('div');
+    item.className = 'stream-item';
+    item.style.cursor = 'pointer';
+
+    const epNum  = ep.episode || ep.number || ep.id?.split(':')[2] || '?';
+    const title  = ep.title || ep.name || `Episode ${epNum}`;
+    const aired  = ep.released || ep.firstAired
+      ? new Date(ep.released || ep.firstAired).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })
+      : '';
+    const overview = ep.overview ? ep.overview.slice(0, 80) + (ep.overview.length > 80 ? '…' : '') : '';
+
+    item.innerHTML = `
+      <span class="stream-quality" style="min-width:36px;text-align:center;">E${epNum}</span>
+      <div class="stream-info">
+        <div class="stream-name">${escapeHTML(title)}</div>
+        <div class="stream-meta">
+          ${aired ? `<span>${aired}</span>` : ''}
+          ${overview ? `<span style="display:block;margin-top:2px;color:var(--muted2);font-size:0.68rem;">${escapeHTML(overview)}</span>` : ''}
+        </div>
+      </div>
+      <button class="stream-play-btn">▶ Watch</button>
+    `;
+
+    item.querySelector('.stream-play-btn').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      document.getElementById('episodeModal').classList.remove('open');
+      // Open stream picker for this specific episode
+      await openSeriesStreamPicker(series, ep.season || selectedSeason, ep.episode || ep.number || parseInt(ep.id?.split(':')[2]) || 1, title);
+    });
+
+    item.addEventListener('click', async (e) => {
+      if (e.target.classList.contains('stream-play-btn')) return;
+      document.getElementById('episodeModal').classList.remove('open');
+      await openSeriesStreamPicker(series, ep.season || selectedSeason, ep.episode || ep.number || parseInt(ep.id?.split(':')[2]) || 1, title);
+    });
+
+    list.appendChild(item);
+  });
+}
+
+async function openSeriesStreamPicker(series, season, episode, epTitle) {
+  const fullTitle = `${series.name || series.title} S${season}E${episode} — ${epTitle}`;
+  const streamId  = `${series.id}:${season}:${episode}`;
+
+  selectedMovie = { ...series, _streamId: streamId, _fullTitle: fullTitle };
+  document.getElementById('streamModalTitle').textContent = fullTitle;
+  document.getElementById('streamModalSub').textContent = '🔍 Searching all sources…';
+  streamList.innerHTML = `
+    <div style="color:var(--muted);font-size:0.85rem;padding:2rem 0;text-align:center;">
+      <div style="margin-bottom:0.5rem;font-size:1.5rem">⏳</div>
+      Searching Torrentio + Nuvio…
+    </div>`;
+  streamModal.classList.add('open');
+
+  try {
+    const [torrentioStreams, nuvioStreams] = await Promise.all([
+      fetchFromSource(`${TORRENTIO_PROXY}?source=torrentio&type=series&id=${encodeURIComponent(streamId)}`, 'torrentio'),
+      fetchFromSource(`${TORRENTIO_PROXY}?source=nuvio&type=series&id=${encodeURIComponent(streamId)}`, 'nuvio')
+    ]);
+
+    const seen = new Set();
+    const merged = [];
+    for (const s of [...nuvioStreams, ...torrentioStreams]) {
+      const key = s.infoHash || s.url || s.name;
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      merged.push(s);
+    }
+    for (const s of merged) {
+      const key = s.infoHash || s.url || s.name;
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      merged.push(s);
+    }
+
+    streamCache[streamId] = merged;
+    currentPickerId    = streamId;
+    currentPickerMovie = { ...series, id: streamId, name: fullTitle, _fullTitle: fullTitle };
+
+    if (merged.length === 0) {
+      streamList.innerHTML = `<div class="status-message">No streams found for this episode.</div>`;
+      document.getElementById('streamModalSub').textContent = 'No streams found.';
+      return;
+    }
+
+    document.getElementById('streamModalSub').textContent =
+      `${merged.length} streams found — sorted by quality`;
+
+    renderStreamItems(merged, { ...series, id: streamId, name: fullTitle, _fullTitle: fullTitle });
+
+  } catch(e) {
+    streamList.innerHTML = `<div class="status-message">Failed to fetch streams.</div>`;
+  }
+}
+
+document.getElementById('episodeModalClose').addEventListener('click', () => {
+  document.getElementById('episodeModal').classList.remove('open');
+});
+document.getElementById('episodeModal').addEventListener('click', e => {
+  if (e.target === document.getElementById('episodeModal'))
+    document.getElementById('episodeModal').classList.remove('open');
+});
+
+/* ══════════════════════════════════════════════
+    REAL-DEBRID — convert magnet to direct stream URL
+    Real-Debrid caches torrents on their servers and
+    returns a direct HTTPS link instantly for popular content.
+    API docs: https://api.real-debrid.com
+══════════════════════════════════════════════ */
+const RD_KEY        = 'AZIOEBYE3PEL4XQF3JIE7NQFSOSINHN3KYCCGIRUQFYOTSOPS3SQ';
+const RD_PROXY = '/api/realdebrid';
+
+async function rdProxy(body) {
+  const res = await fetch(RD_PROXY, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...body, token: RD_KEY })
+  });
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    const msg = String(data.error || '');
+
+    if (res.status === 429 || msg.includes('too_many_requests')) {
+      const e = new Error('Real-Debrid is rate limiting. Wait about a minute, then try again.');
+      e.rateLimited = true;
+      throw e;
+    }
+    if (msg.includes('permission_denied') || msg.includes('not_premium')) {
+      const e = new Error('Real-Debrid rejected the request — check your subscription is active.');
+      e.authError = true;
+      throw e;
+    }
+
+    throw new Error(data.error || `RD proxy error: ${res.status}`);
+  }
+
+  return data;
+}
+
+/* ══════════════════════════════════════════════
+    RD TRANSCODE — mobile-safe playback
+    After resolving a file we ask RD for its REAL codec
+    (not a filename guess). If it's already H.264 we play
+    the file directly at full quality. If it's HEVC/x265
+    we use RD's own HLS transcode, produced on their
+    servers as part of the subscription — no FFmpeg,
+    no Railway, no bandwidth cost to us.
+══════════════════════════════════════════════ */
+
+// Set false to always play the raw file and skip transcoding entirely
+const USE_RD_TRANSCODE = true;
+
+// Preference order when RD offers several HLS qualities.
+// Lower first — smaller and safest on phones and weak connections.
+const HLS_QUALITY_ORDER = ['480p', '360p', '720p', 'medium', 'low', '1080p', 'high', 'original'];
+
+/* Read the real video codec out of an RD mediaInfos response */
+function extractVideoCodec(info) {
+  const video = info?.details?.video;
+  if (!video) return null;
+  const first = Object.values(video)[0];
+  return (first?.codec || '').toLowerCase() || null;
+}
+
+function codecNeedsTranscode(codec) {
+  if (!codec) return false;                                      // unknown — don't force it
+  const c = codec.toLowerCase();
+  if (c.includes('h264') || c.includes('avc')) return false;     // already browser-safe
+  return c.includes('hevc') || c.includes('h265') || c.includes('265') ||
+         c.includes('av1')  || c.includes('vp9')  ||
+         c.includes('xvid') || c.includes('divx') || c.includes('mpeg4');
+}
+
+/* Pick the best HLS variant RD offers, honouring HLS_QUALITY_ORDER */
+function pickHlsVariant(appleObj) {
+  const keys = Object.keys(appleObj || {});
+  if (!keys.length) return null;
+  for (const want of HLS_QUALITY_ORDER) {
+    const hit = keys.find(k => k.toLowerCase().includes(want.toLowerCase()));
+    if (hit) return { quality: hit, url: appleObj[hit] };
+  }
+  return { quality: keys[0], url: appleObj[keys[0]] };           // fall back to first
+}
+
+/* Given a resolved RD file, decide between direct URL and HLS transcode */
+async function chooseBestPlayback(rdId, directUrl, filenameHint, onProgress) {
+  if (!USE_RD_TRANSCODE || !rdId) return directUrl;
+
+  // Fast path: if the filename clearly says x264/AVC we can skip the
+  // mediaInfos round-trip entirely. Saves ~1-2s on most streams, since
+  // x264 is the common case and never needs transcoding anyway.
+  const hint = (filenameHint || '').toUpperCase();
+  if (/X264|H\.?264|AVC/.test(hint) && !/X265|H\.?265|HEVC/.test(hint)) {
+    console.log('[RD] Filename indicates H.264 — skipping codec check');
+    return directUrl;
+  }
+
+  let codec = null;
+  try {
+    onProgress?.('Checking codec…');
+    const info = await rdProxy({ action: 'mediaInfos', id: rdId });
+    codec = extractVideoCodec(info);
+    console.log('[RD] Real codec reported:', codec || 'unknown');
+  } catch (e) {
+    console.warn('[RD] mediaInfos failed:', e.message);
+    // Fall back to reading the filename
+    const hint = (filenameHint || '').toUpperCase();
+    if (/X265|H265|HEVC/.test(hint)) codec = 'hevc';
+  }
+
+  if (!codecNeedsTranscode(codec)) {
+    console.log('[RD] Codec is browser-safe — playing file directly');
+    return directUrl;
+  }
+
+  try {
+    console.log('[RD] Codec needs transcoding — requesting HLS from RD…');
+    onProgress?.('Preparing mobile stream…');
+    const t = await rdProxy({ action: 'transcode', id: rdId });
+    const variant = pickHlsVariant(t.apple);
+    if (variant?.url) {
+      console.log(`[RD] ✅ Using RD HLS transcode (${variant.quality})`);
+      return variant.url;
+    }
+    console.warn('[RD] Transcode returned no HLS variants — using direct URL');
+  } catch (e) {
+    console.warn('[RD] Transcode request failed:', e.message);
+  }
+
+  return directUrl;   // better to try the file than to fail outright
+}
+
+// Resolve a single magnet — used when user clicks one specific stream
+async function magnetToRealDebrid(magnetLink, onProgress) {
+  const data = await rdProxy({ action: 'resolveMagnet', magnets: [magnetLink] });
+  if (!data.download) throw new Error('No download URL returned');
+  return await chooseBestPlayback(data.id, data.download, data.filename, onProgress);
+}
+
+// Resolve using ALL magnets for a movie at once — proxy tries them in order,
+// skipping any flagged as infringing_file automatically
+// RD is rate limited (~250 req/min) and each magnet costs several calls.
+// Sending 60+ guarantees a 429, so cap it — the list is already sorted by
+// quality and seeders, so the best candidates are at the front anyway.
+const MAX_MAGNETS_TO_SEND = 8;
+
+async function resolveWithRetry(magnetList, onProgress) {
+  if (!magnetList.length) throw new Error('No magnets to try');
+
+  const toSend = magnetList.slice(0, MAX_MAGNETS_TO_SEND);
+  console.log(`[RD] Sending ${toSend.length} of ${magnetList.length} magnets to proxy…`);
+
+  const data = await rdProxy({ action: 'resolveMagnet', magnets: toSend });
+  if (!data.download) throw new Error(data.error || 'All streams failed');
+  console.log(`[RD] ✅ Resolved on attempt ${(data.magnetIndex || 0) + 1}`);
+  return await chooseBestPlayback(data.id, data.download, data.filename, onProgress);
+}
+
+function isMagnet(url) {
+  return url && (url.startsWith('magnet:') || url.startsWith('magnet%3A'));
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function resolveStreamUrl(rawUrl) {
+  if (!rawUrl) return null;
+  if (isMagnet(rawUrl)) {
+    return await magnetToRealDebrid(rawUrl);
+  }
+  if (rawUrl.startsWith('http')) {
+    try {
+      const data = await rdProxy({ action: 'unrestrict', link: rawUrl });
+      if (data.download) {
+        return await chooseBestPlayback(data.id, data.download, data.filename);
+      }
+    } catch(e) {
+      console.warn('[RD] Unrestrict failed, using URL as-is:', e.message);
+    }
+    return rawUrl;
+  }
+  return rawUrl;
+}
+
+/* ══════════════════════════════════════════════
+    LAUNCH ROOM
+══════════════════════════════════════════════ */
+/* Normalise a URL that may already be percent-encoded.
+   Encoding an encoded URL turns %3A into %253A — room.html then decodes
+   once, is left with %3A, and the browser treats the result as a relative
+   path. Decode until stable before encoding exactly once. */
+function normaliseUrl(u) {
+  let out = String(u);
+  for (let i = 0; i < 3; i++) {
+    if (!/%[0-9A-Fa-f]{2}/.test(out)) break;
+    let dec;
+    try { dec = decodeURIComponent(out); } catch (e) { break; }
+    if (dec === out) break;
+    // Stop once it looks like a plain absolute URL — RD filenames can
+    // legitimately contain %5B / %5D and those must survive.
+    if (/^(https?|magnet):/i.test(out) && !/%25/.test(out)) break;
+    out = dec;
+  }
+  return out;
+}
+
+function launchRoom(streamUrl, title) {
+  if (!streamUrl) {
+    alert('Could not resolve a playable URL for this stream.');
+    return;
+  }
+
+  const clean = normaliseUrl(streamUrl);
+  console.log('[launchRoom] stream URL:', clean);
+
+  const roomId = 'room_' + Math.random().toString(36).slice(2, 9);
+  const url    = `room.html?room=${encodeURIComponent(roomId)}`
+               + `&stream=${encodeURIComponent(clean)}`
+               + `&title=${encodeURIComponent(title)}`;
+  window.location.href = url;
+}
+
+/* ══════════════════════════════════════════════
+    UTILITIES
+══════════════════════════════════════════════ */
+const FALLBACK_POSTER = 'data:image/svg+xml,' + encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="450" viewBox="0 0 300 450">
+     <rect width="300" height="450" fill="#1a1a1a"/>
+     <text x="50%" y="50%" fill="#555" font-family="sans-serif" font-size="18"
+           text-anchor="middle" dominant-baseline="middle">No Poster</text>
+   </svg>`
+);
+
+function setLoading(on) {
+  gridLoader.textContent = on ? '— loading…' : '';
+}
+
+function showError(msg) {
+  moviesGrid.innerHTML = `<div class="status-message">⚠️ ${escapeHTML(msg)}</div>`;
+}
+
+function escapeHTML(str) {
+  return String(str || '').replace(/[&<>'"]/g,
+    t => ({ '&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;' }[t] || t)
+  );
+}
+
+function formatBytes(bytes) {
+  if (!bytes) return '';
+  if (bytes >= 1e9) return (bytes / 1e9).toFixed(1) + ' GB';
+  if (bytes >= 1e6) return (bytes / 1e6).toFixed(0) + ' MB';
+  return bytes + ' B';
+}
+
+/* ══════════════════════════════════════════════
+    INIT
+══════════════════════════════════════════════ */
+window.addEventListener('DOMContentLoaded', () => {
+  loadStremio();
+});
+</script>
+</body>
+</html>
