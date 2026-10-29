@@ -1180,13 +1180,47 @@ def get_episodes(subject_id: str):
 @app.get("/api/stream/{subject_id}")
 def get_streams(subject_id: str, se: int = 0, ep: int = 0, detail_path: Optional[str] = None):
     streams = engine.get_streams(subject_id, season=se, episode=ep, detail_path=detail_path)
+    # Copies, so the cached entries never carry a token that later expires
+    signed = [{**st, "proxy_token": sign_media(st["url"])} for st in streams]
     return {
         "subject_id": subject_id,
         "season": se,
         "episode": ep,
-        "count": len(streams),
-        "streams": streams
+        "count": len(signed),
+        "streams": signed
     }
+
+# The media relay only serves links this API handed out (signed, time-limited) and only to
+# pages on this site, so others can't run their streaming through it on our bandwidth.
+PROXY_TOKEN_TTL = 6 * 3600
+PROXY_REQUIRE_SIG = os.environ.get("PROXY_REQUIRE_SIG", "1" if os.environ.get("VERCEL") else "0") == "1"
+
+def _proxy_secret() -> bytes:
+    base = os.environ.get("PROXY_SECRET") or os.environ.get("ABLY_API_KEY") or ""
+    return hashlib.sha256(("proxy:" + base).encode()).digest() if base else b""
+
+def _media_sig(url: str, exp: int) -> str:
+    return hmac.new(_proxy_secret(), f"{url}\n{exp}".encode(), hashlib.sha256).hexdigest()[:32]
+
+def sign_media(url: str) -> Dict[str, Any]:
+    exp = int(time.time()) + PROXY_TOKEN_TTL
+    return {"exp": exp, "sig": _media_sig(url, exp)}
+
+def _proxy_allowed(request: Request, url: str, exp: Optional[int], sig: Optional[str]) -> Optional[str]:
+    """Returns why a relay request is refused, or None when it may proceed."""
+    referer = request.headers.get("referer") or request.headers.get("origin")
+    if referer:
+        ref_host = (urlsplit(referer).hostname or "").lower()
+        own_host = (request.headers.get("host") or "").split(":")[0].lower()
+        extra = {h.strip().lower() for h in os.environ.get("ALLOWED_SITE_HOSTS", "").split(",") if h.strip()}
+        if ref_host not in {own_host, "localhost", "127.0.0.1"} | extra:
+            return "Requests from other sites are not allowed"
+    if PROXY_REQUIRE_SIG:
+        if not _proxy_secret():
+            return "Relay is not configured"
+        if not exp or not sig or exp < time.time() or not hmac.compare_digest(sig, _media_sig(url, exp)):
+            return "Missing or expired link signature"
+    return None
 
 @app.get("/api/stream/{subject_id}/captions")
 def get_captions(subject_id: str, se: int = 0, ep: int = 0, stream_id: Optional[str] = None):
@@ -1209,11 +1243,14 @@ PROXY_PASSTHROUGH = ("content-type", "content-length", "content-range", "accept-
 PROXY_CHUNK_BYTES = int(os.environ.get("PROXY_CHUNK_BYTES") or (4 * 1024 * 1024 if os.environ.get("VERCEL") else 0))
 
 @app.get("/proxy")
-async def proxy_stream(request: Request, url: str, h: Optional[str] = None):
+async def proxy_stream(request: Request, url: str, h: Optional[str] = None, exp: Optional[int] = None, sig: Optional[str] = None):
     parts = urlsplit(url)
     host = (parts.hostname or "").lower()
     if parts.scheme not in ("http", "https") or not any(host == s or host.endswith("." + s) for s in PROXY_HOST_SUFFIXES):
         raise HTTPException(status_code=400, detail="Host not allowed")
+    refused = _proxy_allowed(request, url, exp, sig)
+    if refused:
+        raise HTTPException(status_code=403, detail=refused)
     headers = {}
     if h:
         try:
