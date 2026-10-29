@@ -110,7 +110,7 @@
       <video id="videoPlayer" preload="auto" playsinline webkit-playsinline class="video-hidden" aria-label="Watch party video player"></video>
       <div class="yt-wrap" id="ytWrap" hidden></div>
       <!-- Over the YouTube player: taps go to the room, not straight to YouTube -->
-      <div class="yt-shield" id="ytShield" hidden></div>
+      <div class="tap-layer" id="tapLayer" hidden></div>
       <div class="buffer-spin" id="bufferSpin" hidden aria-hidden="true"></div>
       <div class="behind-note" id="behindNote" hidden role="status"></div>
     </div>
@@ -452,10 +452,69 @@ function togglePlay() {
   (clock ? clock.playing : !video.paused) ? userPause() : userPlay();
 }
 playPauseBtn.addEventListener('click', togglePlay);
-video.addEventListener('click', togglePlay);
-video.addEventListener('dblclick', () => document.getElementById('fullscreenBtn').click());
-document.getElementById('ytShield').addEventListener('click', togglePlay);
-document.getElementById('ytShield').addEventListener('dblclick', () => document.getElementById('fullscreenBtn').click());
+
+/* Taps on the picture (a layer over both the <video> and YouTube):
+   - one tap never pauses: in fullscreen it shows or hides the controls
+   - double-tap the right half to skip forward 10s, the left half to go back 10s
+   Pause/play stays on the play button (and the space bar). */
+const tapLayer = document.getElementById('tapLayer');
+const DOUBLE_TAP_MS = 300;
+let lastTap = null;      // { at, right } of a tap that may become a double tap
+let singleTapTimer = null;
+tapLayer.addEventListener('pointerup', e => {
+  if (!videoLoaded) return;
+  const r = tapLayer.getBoundingClientRect();
+  // While the player is turned 90° by CSS, "right" on screen runs top-to-bottom
+  const turned = document.body.classList.contains('fs-rotate') && window.matchMedia('(orientation: portrait)').matches;
+  const right = turned ? e.clientY > r.top + r.height / 2 : e.clientX > r.left + r.width / 2;
+  const now = performance.now();
+  if (lastTap && now - lastTap.at < DOUBLE_TAP_MS && lastTap.right === right) {
+    clearTimeout(singleTapTimer);
+    lastTap = null;
+    skipVideo(right ? 10 : -10);
+    showSkipFlash(right);
+    return;
+  }
+  lastTap = { at: now, right };
+  clearTimeout(singleTapTimer);
+  singleTapTimer = setTimeout(() => { lastTap = null; onSingleTap(); }, DOUBLE_TAP_MS);
+});
+tapLayer.addEventListener('dblclick', e => e.preventDefault());
+
+function onSingleTap() {
+  if (document.body.classList.contains('fs')) toggleFsControls();
+}
+
+// "+10s" / "−10s" ripple on the side that was double-tapped
+function showSkipFlash(right) {
+  const el = document.createElement('div');
+  el.className = 'skip-flash ' + (right ? 'right' : 'left');
+  el.innerHTML = right ? '<i class="fa-solid fa-forward"></i><span>10s</span>' : '<i class="fa-solid fa-backward"></i><span>10s</span>';
+  document.querySelector('.player-wrap').appendChild(el);
+  setTimeout(() => el.remove(), 650);
+}
+
+/* Fullscreen shows only the picture; a tap brings the controls back for a few seconds */
+let fsHideTimer = null;
+function showFsControls() {
+  document.body.classList.add('show-controls');
+  clearTimeout(fsHideTimer);
+  fsHideTimer = setTimeout(() => {
+    // keep them while a menu is open or the bar is being used
+    if (!playerMenu.hidden || scrubbing) return showFsControls();
+    document.body.classList.remove('show-controls');
+  }, 3500);
+}
+function toggleFsControls() {
+  if (document.body.classList.contains('show-controls')) {
+    clearTimeout(fsHideTimer);
+    document.body.classList.remove('show-controls');
+  } else showFsControls();
+}
+// Using the controls keeps them up
+document.querySelector('.controls-bar').addEventListener('pointerdown', () => {
+  if (document.body.classList.contains('fs')) showFsControls();
+});
 
 function skipVideo(sec) {
   if (!videoLoaded) return;
@@ -537,6 +596,7 @@ const isPhone = () => window.matchMedia('(pointer: coarse)').matches && Math.min
 
 function setFullscreenLook(on) {
   document.body.classList.toggle('fs', on);
+  document.body.classList.remove('show-controls');
   if (!on) document.body.classList.remove('fs-rotate');
   document.getElementById('fullscreenBtn').innerHTML = `<i class="fa-solid ${on ? 'fa-compress' : 'fa-expand'}"></i>`;
   if (!on) { try { screen.orientation.unlock(); } catch (e) { /* not supported */ } }
@@ -562,6 +622,11 @@ async function toggleFullscreen() {
       } catch (e) {
         try { await screen.orientation.lock('landscape-primary'); } catch (e2) { rotateOnPhones(); }
       }
+      // Some phones accept the request but stay upright when their auto-rotate is off;
+      // if the screen hasn't actually turned, turn the player ourselves
+      setTimeout(() => {
+        if (document.body.classList.contains('fs') && window.matchMedia('(orientation: portrait)').matches) rotateOnPhones();
+      }, 600);
       return;
     } catch (e) { /* fall through to the CSS-only kind */ }
   }
@@ -579,7 +644,7 @@ let hlsInstance = null;
 function setupVideoSource(url, quiet) {
   if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
   yt.deactivate();
-  document.getElementById('ytShield').hidden = true;
+  tapLayer.hidden = false;   // taps on the picture are handled by the room (see tapLayer)
 
   video.classList.remove('video-hidden');
   urlOverlay.style.display = 'none';
@@ -657,7 +722,7 @@ async function setupYouTube(media, token) {
     if (token !== mediaToken) return;
     videoLoaded = true;
     hasPlayedOnce = false;
-    document.getElementById('ytShield').hidden = false;
+    document.getElementById('tapLayer').hidden = false;
     if (!media.title && title) {
       media.title = title;
       document.getElementById('roomNameDisplay').textContent = title;
