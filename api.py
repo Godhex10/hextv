@@ -1196,8 +1196,9 @@ PROXY_TOKEN_TTL = 6 * 3600
 PROXY_REQUIRE_SIG = os.environ.get("PROXY_REQUIRE_SIG", "1" if os.environ.get("VERCEL") else "0") == "1"
 
 def _proxy_secret() -> bytes:
-    # Its own secret: the old Ably key was public, so signatures made with it could be forged
-    base = os.environ.get("PROXY_SECRET") or ""
+    # Its own secret: the old Ably key was public, so signatures made with it could be forged.
+    # Falls back to that key until PROXY_SECRET is set on Vercel (pending cleanup).
+    base = os.environ.get("PROXY_SECRET") or os.environ.get("ABLY_API_KEY") or ""
     return hashlib.sha256(("proxy:" + base).encode()).digest() if base else b""
 
 def _media_sig(url: str, exp: int) -> str:
