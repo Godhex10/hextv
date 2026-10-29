@@ -68,6 +68,7 @@
     let lastError = null;
     let timer = null;
     let playWaiters = [];
+    let anchor = { v: 0, at: 0 };   // last position YouTube reported, and when
     const fire = name => el.dispatchEvent(new Event(name));
 
     // Rejections use the same names as <video>.play(): NotAllowedError when YouTube didn't start
@@ -171,7 +172,17 @@
 
       get(prop) {
         switch (prop) {
-          case 'currentTime': return player && ready ? player.getCurrentTime() || 0 : 0;
+          case 'currentTime': {
+            if (!player || !ready) return 0;
+            // YouTube hands back a cached position that some devices (notably iPhones) refresh
+            // only every so often. Left as-is, time looks like it stutters behind and leaps ahead,
+            // and the room keeps "correcting" smooth playback. Between refreshes, advance it by
+            // the clock so the room always sees smooth time.
+            const v = player.getCurrentTime() || 0;
+            const now = performance.now();
+            if (v !== anchor.v || state !== PLAYING) anchor = { v, at: now };
+            return state === PLAYING ? v + Math.min(1.5, (now - anchor.at) / 1000) * rate : v;
+          }
           case 'paused': return !(intent === 'play' && (state === PLAYING || state === BUFFERING || state === -1 || state === 5));
           case 'readyState': return !ready ? 0 : state === BUFFERING ? 2 : 4;
           case 'seeking': return performance.now() < seekingUntil;

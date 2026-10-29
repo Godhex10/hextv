@@ -892,7 +892,27 @@ let catchUp = null;        // { since } while closing a small gap by speed
 let releaseTimer = null;   // precise end of a hold
 const hardSyncs = [];      // times of recent snaps, to notice a device that can't keep up
 
+// YouTube: act on a gap only once it's clearly real (above the threshold for 1.5s) and not
+// right after the last correction, so a jittery position can't trigger a stream of nudges.
+// Movies keep the immediate response; their position is exact.
+let gapSince = 0;
+let lastFixAt = -1e9;
+const corrections = [];    // recent correction times, for ?debug=1
+function noteCorrection() {
+  const now = performance.now();
+  corrections.push(now);
+  while (corrections.length && now - corrections[0] > 60000) corrections.shift();
+}
+function gapIsReal(off, threshold) {
+  if (off <= threshold) { gapSince = 0; return false; }
+  if (!yt.active) return true;
+  const now = performance.now();
+  if (!gapSince) gapSince = now;
+  return now - gapSince > 1500 && now - lastFixAt > 5000;
+}
+
 function enginePlay() {
+  if (holding) lastFixAt = performance.now();
   holding = false;
   if (!video.paused) return;
   playRequestedAt = performance.now();
@@ -928,6 +948,7 @@ const failedJumps = [];
 function hardSync(exp) {
   setRate(1);
   catchUp = null;
+  noteCorrection();
   if (isBuffered(exp + 0.1)) {
     quietSeek(exp + 0.1);
   } else if (performance.now() < slowUntil) {
@@ -1043,10 +1064,12 @@ function tick() {
       if (startsIn < 300 && !releaseTimer) {
         releaseTimer = setTimeout(() => { releaseTimer = null; if (holding) enginePlay(); }, startsIn);
       }
-    } else if (drift > (yt.active ? 0.3 : 1) || (holding && drift > playLag)) { // ahead: wait,
-      // (YouTube can't slow down slightly, so even a small lead is closed by a brief pause)
-      setRate(1);                                       // starting early enough to land on time
+    } else if ((drift > (yt.active ? 0.6 : 1) && gapIsReal(drift, yt.active ? 0.6 : 1)) || (holding && drift > playLag)) {
+      // Ahead: wait, starting early enough to land on time. (YouTube can't slow down slightly,
+      // so a lead it can't shrug off is closed by a brief pause.)
+      setRate(1);
       catchUp = null;
+      if (!holding) noteCorrection();
       enginePause(true);
       // The 250ms tick is too coarse to start on the beat; time the release exactly
       if (drift - playLag < 0.3 && !releaseTimer) {
@@ -1057,14 +1080,15 @@ function tick() {
     } else {
       enginePlay();
       const off = Math.abs(drift);
-      if (document.hidden || off < 0.08 || !chasing) {
+      if (document.hidden || off < (yt.active ? 0.15 : 0.08) || !chasing) {
         // In step — or a hidden tab the browser is throttling; it re-syncs when shown again
+        if (catchUp) lastFixAt = performance.now();
         catchUp = null;
         setRate(1);
-      } else if (catchUp || off > 0.25) {
+      } else if (catchUp || gapIsReal(off, yt.active ? 0.4 : 0.25)) {
         // A small gap closes by playing slightly faster or slower; if the gap isn't
         // shrinking (the device can't play faster), snap instead of racing forever
-        if (!catchUp) catchUp = { since: performance.now(), start: off };
+        if (!catchUp) { catchUp = { since: performance.now(), start: off }; noteCorrection(); }
         if (performance.now() - catchUp.since > 6000 && off > catchUp.start * 0.6) hardSync(exp);
         // YouTube only offers fixed speeds, so it catches up at 1.25x (a 0.5s gap in 2s)
         else setRate(drift < 0 ? (yt.active ? 1.25 : 1.1) : 0.92);
@@ -1088,7 +1112,7 @@ if (params.get('debug') === '1') {
     panel.textContent =
       `vs room ${d >= 0 ? '+' : ''}${d.toFixed(2)}s · clock ±${lastRtt ? (lastRtt / 2000).toFixed(2) : '?'}s · ` +
       `x${video.playbackRate} · ${currentMedia && currentMedia.yt ? 'YouTube' : (mediaStreams[streamIndex] || {}).quality || 'video'}` +
-      `${holding ? ' · holding' : ''}${performance.now() < slowUntil ? ' · slow mode' : ''}`;
+      ` · fixes/min ${corrections.length}${holding ? ' · holding' : ''}${performance.now() < slowUntil ? ' · slow mode' : ''}`;
   }, 500);
 }
 
