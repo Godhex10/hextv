@@ -71,6 +71,9 @@
     url.searchParams.set('clientId', o.clientId);
     url.searchParams.set('name', o.name || '');
     url.searchParams.set('color', o.color || '');
+    // Anonymous stats id and web/app, so the dashboard can count viewers (see telemetry.js)
+    try { url.searchParams.set('vid', localStorage.getItem('hx_vid') || ''); } catch (e) { /* private mode */ }
+    url.searchParams.set('platform', window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() ? 'app' : 'web');
     const ws = new WebSocket(url.toString());
     this._ws = ws;
 
@@ -85,6 +88,7 @@
       this._open = false;
       clearInterval(this._ping);
       if (wasOpen) this._emit('disconnected');
+      if (this._closed) return;   // the server ended this room for us: don't knock again
       this._attempt++;
       if (!this._everConnected && this._attempt === 3) this._emit('failed');
       // Back off 0.5s, 1s, 2s ... up to 10s, forever: the room comes back when the network does
@@ -110,6 +114,10 @@
       this._members = msg.members || this._members;
       const m = msg.member || {};
       this._presenceSubs.forEach(cb => cb({ action: msg.action, clientId: m.clientId, data: m.data, timestamp: m.timestamp }));
+    } else if (msg.t === 'closed') {
+      // Room closed by the admin, viewer removed, or new rooms paused
+      this._closed = true;
+      this._emit('closed', msg);
     } else if (msg.t === 'time') {
       const resolve = this._timeReqs.get(msg.id);
       if (resolve) { this._timeReqs.delete(msg.id); resolve(msg.serverTime); }

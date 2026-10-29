@@ -11,6 +11,7 @@
 <!-- HLS.js — needed for .m3u8 streams on Chrome/Firefox/Android -->
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
 <script src="js/moviebox.js"></script>
+<script src="js/telemetry.js"></script>
 <script src="js/rooms.js"></script>
 <script src="js/youtube.js"></script>
 
@@ -337,8 +338,18 @@ function initAbly() {
     });
     ablyClient.connection.on('failed', () => {
       isChannelReady = false;
+      stat.error('room', 'could not connect');
       showToast('Could not connect to room');
       if (!joinedOnce) { joinedOnce = true; startAlone(); }
+    });
+
+    // The room server ended this room for us (closed by HexTV, removed, or paused for maintenance)
+    ablyClient.connection.on('closed', info => {
+      isChannelReady = false;
+      enginePause(false);
+      showMediaStatus(info.message || 'This room was closed.', true);
+      document.getElementById('mediaRetry').hidden = true;
+      updateSyncStatus(false);
     });
 
     channel = ablyClient.channels.get('room:' + roomId);
@@ -706,6 +717,7 @@ function loadMedia(media) {
   const token = ++mediaToken;
   document.getElementById('pasteHint')?.remove();
   if (media.title) document.getElementById('roomNameDisplay').textContent = media.title;
+  stat.title(media, true);
   // Keep the address bar (and so the invite link) pointing at what's playing
   history.replaceState(null, '', MB.roomUrl(media, roomId));
   showInviteLink();
@@ -733,20 +745,22 @@ async function setupYouTube(media, token) {
     document.getElementById('tapLayer').hidden = false;
     if (!media.title && title) {
       media.title = title;
+      stat.title(media, false);
       document.getElementById('roomNameDisplay').textContent = title;
       history.replaceState(null, '', MB.roomUrl(media, roomId));
       showInviteLink();
     }
     hideMediaStatus();
+    stat.startup();
   } catch (e) {
-    if (token === mediaToken) showMediaStatus(e.message, true);
+    if (token === mediaToken) { showMediaStatus(e.message, true); stat.error('youtube', e.message); }
     throw e;
   }
 }
 
 // YouTube refusing a video after it loaded (embedding disabled, removed…)
 videoEl.addEventListener('error', () => {
-  if (yt.active && yt.lastError) showMediaStatus(yt.lastError, true);
+  if (yt.active && yt.lastError) { showMediaStatus(yt.lastError, true); stat.error('youtube', yt.lastError); }
 });
 
 async function resolveLibraryTitle(media, token) {
@@ -766,7 +780,7 @@ async function resolveLibraryTitle(media, token) {
     playStream(0, false);
     hideMediaStatus();
   } catch (e) {
-    if (token === mediaToken) showMediaStatus(e.message, true);
+    if (token === mediaToken) { showMediaStatus(e.message, true); stat.error('lookup', e.message); }
     throw e;
   }
 }
@@ -784,6 +798,7 @@ async function loadSubtitles(media, q, token) {
       await new Promise(r => setTimeout(r, 3000 * (attempt + 1)));
     }
   }
+  if (token === mediaToken) stat.error('subs', 'subtitle lookup failed');
 }
 
 // Switch to one of the title's versions; with keep=true the position and play state carry over
@@ -813,12 +828,14 @@ video.addEventListener('error', () => {
   if (lastRetry.index !== streamIndex || performance.now() - lastRetry.at > 60000) {
     lastRetry = { index: streamIndex, at: performance.now() };
     showToast('Connection hiccup — reloading the video');
+    stat.error('relay', 'reload ' + ((mediaStreams[streamIndex] || {}).quality || ''));
     playStream(streamIndex, true);
   } else if (streamIndex + 1 < mediaStreams.length) {
     showToast('That version failed — trying another');
     playStream(streamIndex + 1, true);
   } else {
     showMediaStatus('The video server refused every version of this title. It may be busy — try again in a few minutes.', true);
+    stat.error('relay', 'every version refused');
   }
 });
 
@@ -1086,6 +1103,7 @@ function checkJump(exp) {
   if (failedJumps.length < 2) return;
   failedJumps.length = 0;
   if (stepDown()) return;
+  stat.add('slow_mode_n');
   slowUntil = now + 60000;   // the "behind" label on the video explains it to the viewer
 }
 
@@ -1114,6 +1132,7 @@ function stepDown(fallbackMessage) {
     .sort((a, b) => height(b.s) - height(a.s))[0];
   if (lighter) {
     lastStepDownAt = performance.now();
+    stat.add('step_downs');
     showToast(`Switched to ${lighter.s.quality} to keep up with the room`);
     playStream(lighter.i, true);
     return true;
@@ -1278,6 +1297,7 @@ function updateSyncStatus(busy) {
   syncBtn.dataset.state = state;
   syncBtn.querySelector('.sync-text').textContent = text;
   syncBtn.title = state === 'behind' ? 'Tap to jump to where everyone else is' : 'Jump to where everyone else is';
+  if (note && behindNote.hidden) stat.add('behind_n');
   behindNote.textContent = note;
   behindNote.hidden = !note;
 }
@@ -1414,6 +1434,7 @@ function sendMessage() {
   msgInput.value = '';
   msgInput.style.height = '38px';
   if (channel && isChannelReady) channel.publish('chat_message', payload);
+  stat.add('chat_n');
 }
 
 function renderMessage(payload, isOwn) {
@@ -1523,6 +1544,7 @@ document.querySelectorAll('.reaction-btn').forEach(btn => {
     const emoji = btn.getAttribute('data-emoji');
     spawnFloatingReaction(emoji);
     if (channel && isChannelReady) channel.publish('reaction', { emoji });
+    stat.add('react_n');
   });
 });
 
@@ -1634,6 +1656,57 @@ function dismissSyncOverlay() {
 document.getElementById('syncOverlay').addEventListener('keydown', e => {
   if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); dismissSyncOverlay(); }
 });
+
+/* ══════════════════════════════════════════════
+    STATS — anonymous numbers for the HexTV dashboard (js/telemetry.js)
+══════════════════════════════════════════════ */
+const stat = {
+  startAt: 0,
+  add(name, v) { if (window.HexStats) HexStats.add(name, v); },
+  error(kind, detail) { if (window.HexStats) HexStats.error(kind, detail); },
+  title(media, joined) {
+    if (!window.HexStats) return;
+    const key = media.mb ? 'mb:' + media.mb + (media.se ? ':' + media.se + ':' + media.ep : '') : media.yt ? 'yt:' + media.yt : 'link';
+    const type = media.mb ? (media.se ? 'series' : 'movie') : media.yt ? 'youtube' : 'link';
+    const label = media.mb && media.se ? `${media.title || ''} S${media.se}E${media.ep}` : media.title || '';
+    HexStats.setTitle({ key, title: label.trim(), type });
+    if (joined) { HexStats.add('title_join'); this.startAt = performance.now(); }
+  },
+  // Time from choosing a title to it being ready to play
+  startup() {
+    if (!this.startAt) return;
+    const ms = performance.now() - this.startAt;
+    this.startAt = 0;
+    if (ms < 120000) { this.add('startup_ms_sum', ms); this.add('startup_n'); }
+  }
+};
+video.addEventListener('canplay', () => stat.startup());
+// Buffering: playback stalls the viewer didn't cause by seeking
+let stallAt = 0;
+video.addEventListener('waiting', () => { if (hasPlayedOnce && !video.seeking && clock && clock.playing) stallAt = performance.now(); });
+video.addEventListener('playing', () => {
+  if (!stallAt) return;
+  const s = (performance.now() - stallAt) / 1000;
+  stallAt = 0;
+  if (s > 0.3 && s < 300) { stat.add('buffer_n'); stat.add('buffer_s', s); }
+});
+// Watch time, video relay traffic and how far off the room viewers are
+let driftTick = 0;
+setInterval(() => {
+  if (!videoLoaded || video.paused || waitingForTap || document.hidden) return;
+  stat.add('watch_s', 1);
+  if (currentMedia && currentMedia.mb) {
+    const s = mediaStreams[streamIndex] || {};
+    // Bytes a second of this version costs the relay (its file size over its length; ~1.5 Mbps if unknown)
+    const bps = s.size_mb && s.duration_sec ? s.size_mb * 1048576 / s.duration_sec : 190000;
+    stat.add('watch_relay_s', 1);
+    stat.add('relay_bytes', Math.round(bps * video.playbackRate));
+  }
+  if (clock && clock.playing && ++driftTick % 10 === 0 && shownStatus.startsWith('ok')) {
+    stat.add('drift_sum', Math.abs(video.currentTime - expectedPos()));
+    stat.add('drift_n');
+  }
+}, 1000);
 
 /* ══════════════════════════════════════════════
     INIT

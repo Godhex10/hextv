@@ -72,6 +72,7 @@
 </div>
 
 <script src="js/moviebox.js"></script>
+<script src="js/telemetry.js"></script>
 <script>
 /* ══════════════════════════════════════════════
     STATE
@@ -224,8 +225,10 @@ document.getElementById('searchForm').addEventListener('submit', async e => {
                    type: r.subject_type === 2 ? 'series' : 'movie',
                    year: (r.release_date || '').slice(0, 4), rating: r.imdb_rating }));
     if (searchQuery === q) render();
+    window.HexStats && HexStats.search(q, searchItems.length);
   } catch (err) {
     showError('Search failed: ' + err.message);
+    window.HexStats && HexStats.error('lookup', 'search: ' + err.message);
   } finally {
     setLoading(false);
   }
