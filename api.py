@@ -57,9 +57,16 @@ app = FastAPI(
     version="2.5.0"
 )
 
+# Only HexTV's own pages (and local development) may call the API from a browser, so a copied
+# site can't run on this backend. ALLOWED_SITE_HOSTS adds more hosts, comma-separated.
+SITE_HOSTS = {"streamtogether-pi.vercel.app"} | {
+    h.strip().lower() for h in os.environ.get("ALLOWED_SITE_HOSTS", "").split(",") if h.strip()}
+LOCAL_HOSTS = {"localhost", "127.0.0.1"}
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?|https://("
+        + "|".join(re.escape(h) for h in sorted(SITE_HOSTS)) + ")",
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -1214,9 +1221,11 @@ def _proxy_allowed(request: Request, url: str, exp: Optional[int], sig: Optional
     if referer:
         ref_host = (urlsplit(referer).hostname or "").lower()
         own_host = (request.headers.get("host") or "").split(":")[0].lower()
-        extra = {h.strip().lower() for h in os.environ.get("ALLOWED_SITE_HOSTS", "").split(",") if h.strip()}
-        if ref_host not in {own_host, "localhost", "127.0.0.1"} | extra:
+        if ref_host not in {own_host} | LOCAL_HOSTS | SITE_HOSTS:
             return "Requests from other sites are not allowed"
+    elif PROXY_REQUIRE_SIG:
+        # Our own player always sends a Referer; a page that hides it is trying to get past the check above
+        return "Requests from other sites are not allowed"
     if PROXY_REQUIRE_SIG:
         if not _proxy_secret():
             return "Relay is not configured"
