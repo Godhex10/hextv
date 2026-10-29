@@ -321,3 +321,28 @@ button.sync-badge:active { transform: scale(0.95); }
 /* ── Fullscreen keeps our controls bar ── */
 .video-col:fullscreen { width: 100%; height: 100%; background: #000; }
 .video-col:fullscreen .player-wrap { flex: 1; }
+
+/* ── Sync status light (button states set by the room script) ── */
+.sync-badge[data-state="ok"]      { background: rgba(34, 197, 94, 0.1);  border-color: rgba(34, 197, 94, 0.32);  color: #4ade80; }
+.sync-badge[data-state="busy"]    { background: rgba(59, 130, 246, 0.12); border-color: rgba(59, 130, 246, 0.4);  color: #93c5fd; }
+.sync-badge[data-state="behind"]  { background: rgba(245, 158, 11, 0.14); border-color: rgba(245, 158, 11, 0.55); color: #fbbf24; }
+.sync-badge[data-state="offline"],
+.sync-badge[data-state="idle"]    { background: rgba(255, 255, 255, 0.05); border-color: var(--border-hover); color: var(--muted); }
+.sync-badge[data-state="busy"] .sync-dot    { background: #3b82f6; animation: syncPulse 1s ease-in-out infinite; }
+.sync-badge[data-state="behind"] .sync-dot  { background: #f59e0b; }
+.sync-badge[data-state="offline"] .sync-dot,
+.sync-badge[data-state="idle"] .sync-dot    { background: var(--muted2); }
+@keyframes syncPulse { 50% { opacity: 0.3; } }
+button.sync-badge[data-state="behind"]:hover { background: rgba(245, 158, 11, 0.24); border-color: rgba(245, 158, 11, 0.8); }
+
+.behind-note { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 14; max-width: calc(100% - 24px);
+  padding: 6px 12px; border-radius: 999px; font: 600 0.74rem var(--font-ui); text-align: center; color: #fbbf24;
+  background: rgba(10, 10, 14, 0.9); border: 1px solid rgba(245, 158, 11, 0.45); pointer-events: none; }
+.behind-note[hidden] { display: none; }
+
+/* Phones hide the label to save room — but never when something needs attention */
+@media (max-width: 700px) {
+  .sync-badge[data-state="behind"] .sync-text,
+  .sync-badge[data-state="offline"] .sync-text { display: inline; }
+  .sync-badge[data-state="behind"], .sync-badge[data-state="offline"] { padding: 0.22rem 0.55rem; }
+}

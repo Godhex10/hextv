@@ -107,6 +107,7 @@
 
       <video id="videoPlayer" preload="auto" playsinline webkit-playsinline class="video-hidden" aria-label="Watch party video player"></video>
       <div class="buffer-spin" id="bufferSpin" hidden aria-hidden="true"></div>
+      <div class="behind-note" id="behindNote" hidden role="status"></div>
     </div>
 
     <div class="controls-bar">
@@ -137,7 +138,7 @@
         <input type="range" class="vol-slider" id="volSlider" min="0" max="1" step="0.05" value="1" aria-label="Volume">
       </div>
 
-      <button class="sync-badge" id="syncBtn" title="Jump to where everyone else is">
+      <button class="sync-badge" id="syncBtn" data-state="idle" title="Jump to where everyone else is">
         <span class="sync-dot"></span>
         <span class="sync-text">Sync</span>
       </button>
@@ -871,8 +872,7 @@ function checkJump(exp) {
   if (failedJumps.length < 2) return;
   failedJumps.length = 0;
   if (stepDown()) return;
-  slowUntil = now + 60000;
-  showToast('Your connection is slow — playing a little behind the room. Tap Sync to retry.');
+  slowUntil = now + 60000;   // the "behind" label on the video explains it to the viewer
 }
 
 // Several snaps in a short time means this device can't keep up (slow decoder or network):
@@ -908,6 +908,7 @@ function stepDown(fallbackMessage) {
 // low, step down before the viewer hits buffering (never over a quality they picked themselves)
 const BW_WINDOW_MS = 15000;
 let bwSample = null;       // { at, end } buffered end at the start of the window
+let lastPace = null;       // last measured seconds-of-video downloaded per second
 function bufferedEnd() {
   const b = video.buffered, t = video.currentTime;
   for (let i = 0; i < b.length; i++) if (b.start(i) <= t + 0.5 && b.end(i) >= t) return b.end(i);
@@ -924,6 +925,7 @@ setInterval(() => {
   const pace = (end - bwSample.end) / ((now - bwSample.at) / 1000);
   const ahead = end - video.currentTime;
   bwSample = { at: now, end };
+  lastPace = pace;
   if (pace < 1 && ahead < 12) stepDown();
 }, 5000);
 video.addEventListener('seeking', () => { bwSample = null; }); // a jump isn't download progress
@@ -939,6 +941,8 @@ function tick() {
     const exp = expectedPos();
     const drift = video.currentTime - exp;            // > 0: ahead of the room
     if (clock.playing) checkJump(exp);
+    // When the slow spell ends, only chase again if downloads now outpace playback
+    if (slowUntil && performance.now() >= slowUntil && lastPace !== null && lastPace < 1.05) slowUntil = performance.now() + 30000;
     const chasing = performance.now() >= slowUntil;
     if (!clock.playing) {
       setRate(1);
@@ -981,6 +985,53 @@ function tick() {
   const busy = clock && clock.playing && !waitingForTap && videoLoaded &&
     (holding || video.seeking || (video.readyState < 3 && !video.paused));
   document.getElementById('bufferSpin').hidden = !busy;
+  updateSyncStatus(busy);
+}
+
+/* ── Sync status: the Sync button doubles as a status light ───────────
+   green "In sync" · blue "Syncing…" · amber "12s behind · Sync" · grey "Offline".
+   Being behind also shows a label on the video, kept clear of the controls. */
+const syncBtn = document.getElementById('syncBtn');
+const behindNote = document.getElementById('behindNote');
+let behind = false;          // hysteresis, so the state doesn't flicker around the threshold
+let behindSince = 0;
+let shownStatus = '';
+function updateSyncStatus(busy) {
+  let state, text, note = '';
+  if (!isChannelReady) {
+    state = 'offline'; text = 'Offline'; behind = false;
+  } else if (!clock || !videoLoaded || waitingForTap) {
+    state = 'idle'; text = 'Sync'; behind = false;
+  } else {
+    // A version that's still loading or seeking reports a meaningless position (often 0:00)
+    busy = busy || video.seeking || video.readyState < 2 || performance.now() - sourceChangedAt < 3000;
+    const lag = expectedPos() - video.currentTime;    // > 0: behind the room
+    behind = behind ? lag > 0.6 : lag > 1.5;
+    if (!behind) behindSince = 0;
+    else if (!behindSince) behindSince = performance.now();
+    if (behind && !busy) {
+      const secs = Math.round(lag);
+      state = 'behind'; text = `${secs}s behind · Sync`;
+      // Only call it out once it lasts; a quick catch-up shouldn't flash a warning
+      if (performance.now() - behindSince > 3000) {
+        note = performance.now() < slowUntil
+          ? `Slow connection — you are ${secs}s behind the room`
+          : `You are ${secs}s behind the room — tap Sync`;
+      }
+    } else if (busy) {
+      state = 'busy'; text = 'Syncing…';
+    } else {
+      state = 'ok'; text = 'In sync';
+    }
+  }
+  const key = state + '|' + text + '|' + note;
+  if (key === shownStatus) return;
+  shownStatus = key;
+  syncBtn.dataset.state = state;
+  syncBtn.querySelector('.sync-text').textContent = text;
+  syncBtn.title = state === 'behind' ? 'Tap to jump to where everyone else is' : 'Jump to where everyone else is';
+  behindNote.textContent = note;
+  behindNote.hidden = !note;
 }
 setInterval(tick, 250);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
