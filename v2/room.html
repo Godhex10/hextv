@@ -811,11 +811,31 @@ function expectedPos(c = clock) {
   return c.playing ? c.time + Math.max(0, serverNow() - c.at) / 1000 : c.time;
 }
 
-function measureClockOffset() {
+// Clock offset, NTP-style. One sample is only as good as its round trip: on a busy link
+// (a video downloading) the trip is long and lopsided and the estimate can be off by a
+// second, which puts this device that far from everyone while it still reads "In sync".
+// So sample repeatedly and trust the fastest trips, whose error is smallest.
+const clockSamples = [];          // recent { rtt, offset, at }
+let clockSampler = null;
+let lastRtt = null;
+function takeClockSample() {
   const t0 = Date.now();
-  ablyClient.time()
-    .then(server => { clockOffset = server - (t0 + Date.now()) / 2; })
-    .catch(() => {});
+  return ablyClient.time().then(server => {
+    const t1 = Date.now();
+    clockSamples.push({ rtt: t1 - t0, offset: server - (t0 + t1) / 2, at: t1 });
+    while (clockSamples.length > 15) clockSamples.shift();
+    const best = clockSamples.reduce((a, b) => (b.rtt < a.rtt ? b : a));
+    lastRtt = best.rtt;
+    // Ignore jitter-sized changes so playback isn't nudged for nothing
+    if (clockSamples.length === 1 || Math.abs(best.offset - clockOffset) > 30) clockOffset = best.offset;
+  }).catch(() => {});
+}
+function measureClockOffset() {
+  // A burst on (re)connect, then one sample every 20s to keep finding quiet moments
+  (async () => {
+    for (let i = 0; i < 6; i++) { await takeClockSample(); await new Promise(r => setTimeout(r, 250)); }
+  })();
+  if (!clockSampler) clockSampler = setInterval(() => { if (isChannelReady) takeClockSample(); }, 20000);
 }
 
 function broadcastSync(payload) {
@@ -1003,6 +1023,7 @@ function enginePause(hold) {
 function setRate(r) { if (video.playbackRate !== r) video.playbackRate = r; }
 
 function tick() {
+  if (waitingForTap && videoLoaded && video.playbackRate !== 1) setRate(1);   // no catch-up speed left behind
   if (clock && videoLoaded && !waitingForTap && video.readyState >= 1) {
     const exp = expectedPos();
     const drift = video.currentTime - exp;            // > 0: ahead of the room
@@ -1022,7 +1043,8 @@ function tick() {
       if (startsIn < 300 && !releaseTimer) {
         releaseTimer = setTimeout(() => { releaseTimer = null; if (holding) enginePlay(); }, startsIn);
       }
-    } else if (drift > 1 || (holding && drift > playLag)) { // ahead (usually after a jump): wait,
+    } else if (drift > (yt.active ? 0.3 : 1) || (holding && drift > playLag)) { // ahead: wait,
+      // (YouTube can't slow down slightly, so even a small lead is closed by a brief pause)
       setRate(1);                                       // starting early enough to land on time
       catchUp = null;
       enginePause(true);
@@ -1044,7 +1066,8 @@ function tick() {
         // shrinking (the device can't play faster), snap instead of racing forever
         if (!catchUp) catchUp = { since: performance.now(), start: off };
         if (performance.now() - catchUp.since > 6000 && off > catchUp.start * 0.6) hardSync(exp);
-        else setRate(drift < 0 ? 1.1 : 0.92);
+        // YouTube only offers fixed speeds, so it catches up at 1.25x (a 0.5s gap in 2s)
+        else setRate(drift < 0 ? (yt.active ? 1.25 : 1.1) : 0.92);
       }
     }
   }
@@ -1052,6 +1075,21 @@ function tick() {
     (holding || video.seeking || (video.readyState < 3 && !video.paused));
   document.getElementById('bufferSpin').hidden = !busy;
   updateSyncStatus(busy);
+}
+
+/* ── ?debug=1: a small readout to compare devices side by side ── */
+if (params.get('debug') === '1') {
+  const panel = document.createElement('div');
+  panel.className = 'sync-debug';
+  document.querySelector('.player-wrap').appendChild(panel);
+  setInterval(() => {
+    if (!clock) { panel.textContent = 'debug: waiting for the room'; return; }
+    const d = video.currentTime - expectedPos();
+    panel.textContent =
+      `vs room ${d >= 0 ? '+' : ''}${d.toFixed(2)}s · clock ±${lastRtt ? (lastRtt / 2000).toFixed(2) : '?'}s · ` +
+      `x${video.playbackRate} · ${currentMedia && currentMedia.yt ? 'YouTube' : (mediaStreams[streamIndex] || {}).quality || 'video'}` +
+      `${holding ? ' · holding' : ''}${performance.now() < slowUntil ? ' · slow mode' : ''}`;
+  }, 500);
 }
 
 /* ── Sync status: the Sync button doubles as a status light ───────────
@@ -1072,7 +1110,7 @@ function updateSyncStatus(busy) {
     // A version that's still loading or seeking reports a meaningless position (often 0:00)
     busy = busy || video.seeking || video.readyState < 2 || performance.now() - sourceChangedAt < 3000;
     const lag = expectedPos() - video.currentTime;    // > 0: behind the room
-    behind = behind ? lag > 0.6 : lag > 1.5;
+    behind = behind ? lag > 0.4 : lag > 0.8;
     if (!behind) behindSince = 0;
     else if (!behindSince) behindSince = performance.now();
     if (behind && !busy) {

@@ -354,3 +354,7 @@ button.sync-badge[data-state="behind"]:hover { background: rgba(245, 158, 11, 0.
 /* Taps land here so play/pause/seek go through the room, not straight to YouTube */
 .yt-shield { position: absolute; inset: 0; z-index: 2; cursor: pointer; }
 .yt-shield[hidden] { display: none; }
+
+/* ?debug=1 readout */
+.sync-debug { position: absolute; left: 10px; bottom: 10px; z-index: 30; padding: 4px 8px; border-radius: 6px; pointer-events: none;
+  font: 600 11px ui-monospace, Consolas, monospace; color: #a7f3d0; background: rgba(0, 0, 0, 0.75); border: 1px solid rgba(255, 255, 255, 0.12); }
