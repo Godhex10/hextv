@@ -835,17 +835,44 @@ function isBuffered(t) {
   return false;
 }
 
+// On a link too slow for the video, jumping ahead throws away what's loaded and the new spot
+// never loads in time either. After two such failed jumps, stop chasing for a minute and play
+// behind the room instead — watching late beats not watching. Tapping Sync tries again.
+let slowUntil = 0;
+let pendingJump = null;    // { target } an out-of-buffer jump waiting to become playable
+const failedJumps = [];
+
 // Snap to the room: instantly if that part is loaded, otherwise jump ahead and let the room arrive
 function hardSync(exp) {
   setRate(1);
   catchUp = null;
   if (isBuffered(exp + 0.1)) {
     quietSeek(exp + 0.1);
+  } else if (performance.now() < slowUntil) {
+    enginePlay();
+    return;
   } else {
     enginePause(true);
-    quietSeek(exp + lead());
+    pendingJump = { target: exp + lead() };
+    quietSeek(pendingJump.target);
   }
   noteHardSync();
+}
+
+// Called when the room reaches the spot we jumped to: did the video load in time?
+function checkJump(exp) {
+  if (!pendingJump || exp < pendingJump.target) return;
+  const ok = video.readyState >= 3;
+  pendingJump = null;
+  if (ok) return;
+  const now = performance.now();
+  failedJumps.push(now);
+  while (failedJumps.length && now - failedJumps[0] > 60000) failedJumps.shift();
+  if (failedJumps.length < 2) return;
+  failedJumps.length = 0;
+  if (stepDown()) return;
+  slowUntil = now + 60000;
+  showToast('Your connection is slow — playing a little behind the room. Tap Sync to retry.');
 }
 
 // Several snaps in a short time means this device can't keep up (slow decoder or network):
@@ -911,6 +938,8 @@ function tick() {
   if (clock && videoLoaded && !waitingForTap && video.readyState >= 1) {
     const exp = expectedPos();
     const drift = video.currentTime - exp;            // > 0: ahead of the room
+    if (clock.playing) checkJump(exp);
+    const chasing = performance.now() >= slowUntil;
     if (!clock.playing) {
       setRate(1);
       enginePause(false);
@@ -936,7 +965,7 @@ function tick() {
     } else {
       enginePlay();
       const off = Math.abs(drift);
-      if (document.hidden || off < 0.08) {
+      if (document.hidden || off < 0.08 || !chasing) {
         // In step — or a hidden tab the browser is throttling; it re-syncs when shown again
         catchUp = null;
         setRate(1);
@@ -1059,6 +1088,8 @@ function startAlone() {
 document.getElementById('syncBtn').addEventListener('click', () => {
   if (!isChannelReady) return showToast('Not connected to the room yet');
   showToast('Syncing with the room…');
+  slowUntil = 0;              // an explicit tap means "try to catch the room again"
+  failedJumps.length = 0;
   requestState({ silent: true, fromButton: true });
 });
 
