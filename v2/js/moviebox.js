@@ -22,7 +22,9 @@
   // Browsers can't send the Referer/Origin the video CDN insists on, so MP4s go through the API relay
   function proxied(stream) {
     const h = stream.headers ? '&h=' + encodeURIComponent(btoa(JSON.stringify(stream.headers))) : '';
-    return API + '/proxy?url=' + encodeURIComponent(stream.url) + h;
+    // The relay only serves links the API signed
+    const t = stream.proxy_token ? `&exp=${stream.proxy_token.exp}&sig=${stream.proxy_token.sig}` : '';
+    return API + '/proxy?url=' + encodeURIComponent(stream.url) + h + t;
   }
 
   const PREFERRED_HEIGHT = 720; // light enough to relay to a whole room, still sharp

@@ -263,9 +263,10 @@
   </div>
 </footer>
 
+<script src="js/moviebox.js"></script>
 <script src="js/ui.js"></script>
 <script>
-  /* ── Hero poster wall: same Cinemeta catalogue the library uses ── */
+  /* ── Hero poster wall: the same MovieBox catalogue the library uses ── */
   (function () {
     const wall = document.getElementById('heroGrid');
     const COLS = 6, PER_COL = 4;
@@ -290,17 +291,17 @@
       col.innerHTML = items.join('') + items.join('');   // doubled for a seamless loop
     });
     fill([]);
-    fetch('https://v3-cinemeta.strem.io/catalog/movie/top.json')
-      .then(r => r.json())
+    MB.get('/catalog/home')
       .then(d => {
-        const metas = (d.metas || []).filter(m => m.poster);
-        const posters = metas.map(m => m.poster);
-        if (posters.length) fill(posters);
-        // Give the features mock a real backdrop
-        const pick = metas[Math.floor(Math.random() * Math.min(8, metas.length))];
+        const seen = new Set();
+        const items = (d.rows || []).flatMap(r => r.items)
+          .filter(it => it.cover && !seen.has(it.subject_id) && seen.add(it.subject_id));
+        if (items.length) fill(items.map(it => it.cover));
+        // Give the features mock a real title
+        const pick = items[Math.floor(Math.random() * Math.min(8, items.length))];
         if (pick) {
-          document.getElementById('mockPoster').style.backgroundImage = `url("${pick.background || pick.poster}")`;
-          document.getElementById('mockTitle').textContent = pick.name;
+          document.getElementById('mockPoster').style.backgroundImage = `url("${pick.cover}")`;
+          document.getElementById('mockTitle').textContent = pick.title;
         }
       })
       .catch(() => {});
