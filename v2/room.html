@@ -1163,7 +1163,14 @@ function tick() {
     // When the slow spell ends, only chase again if downloads now outpace playback
     if (slowUntil && performance.now() >= slowUntil && lastPace !== null && lastPace < 1.05) slowUntil = performance.now() + 30000;
     const chasing = performance.now() >= slowUntil;
-    if (!clock.playing) {
+    // Past the end the room clock keeps counting, but there's nothing left to catch up to
+    const atEnd = clock.playing && isFinite(video.duration) && video.duration > 0 && exp >= video.duration - 0.3;
+    if (atEnd) {
+      setRate(1);
+      holding = false;
+      catchUp = null;
+      if (!video.ended && video.currentTime < video.duration - 0.5) quietSeek(video.duration - 0.05);
+    } else if (!clock.playing) {
       setRate(1);
       enginePause(false);
       if (Math.abs(drift) > 0.25) quietSeek(exp);
@@ -1241,6 +1248,8 @@ function updateSyncStatus(busy) {
     state = 'offline'; text = 'Offline'; behind = false;
   } else if (!clock || !videoLoaded || waitingForTap) {
     state = 'idle'; text = 'Sync'; behind = false;
+  } else if (clock.playing && isFinite(video.duration) && video.duration > 0 && expectedPos() >= video.duration - 0.3) {
+    state = 'idle'; text = 'Ended'; behind = false;
   } else {
     // A version that's still loading or seeking reports a meaningless position (often 0:00)
     busy = busy || video.seeking || video.readyState < 2 || performance.now() - sourceChangedAt < 3000;
