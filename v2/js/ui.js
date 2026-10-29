@@ -59,51 +59,32 @@
     const pl = document.getElementById('preloader');
     if (!pl) { document.body.classList.remove('is-loading'); return Promise.resolve(); }
 
-    const word = document.getElementById('plWord');
-    const text = (word.dataset.text || 'STREAMTOGETHER');
-    const split = Number(word.dataset.split || 6);
-    word.innerHTML = [...text].map((ch, i) =>
-      `<span class="${i >= split ? 'w' : ''}" style="--i:${i}">${ch}</span>`).join('');
-
+    // First visit gets a short moment for the logo; later visits only cover the page load
     const seen = sessionStorage.getItem('st_seen_intro') === '1';
     const bar = document.getElementById('plBar');
-    const count = document.getElementById('plCount');
     if (seen || reduceMotion) pl.classList.add('quick');
 
     return new Promise(resolve => {
       const start = performance.now();
-      const minTime = seen || reduceMotion ? 700 : 2600;
+      const minTime = seen || reduceMotion ? 500 : 1400;
       let fontsReady = false, pageReady = document.readyState === 'complete';
       (document.fonts ? document.fonts.ready : Promise.resolve()).then(() => { fontsReady = true; });
       window.addEventListener('load', () => { pageReady = true; }, { once: true });
-
-      if (!seen && !reduceMotion) {
-        let n = 3;
-        const tickNum = () => {
-          count.textContent = n;
-          count.classList.remove('tick'); void count.offsetWidth; count.classList.add('tick');
-          if (--n > 0) setTimeout(tickNum, 750);
-          else setTimeout(() => { word.classList.add('on'); }, 600);
-        };
-        tickNum();
-      } else {
-        word.classList.add('on');
-      }
 
       const step = () => {
         const t = performance.now() - start;
         const real = (fontsReady ? 0.5 : 0.2) + (pageReady ? 0.5 : 0.2);
         const pct = Math.min(1, Math.min(t / minTime, real));
-        bar.style.width = (pct * 100).toFixed(1) + '%';
-        if (pct >= 1 || t > 6000) {
-          bar.style.width = '100%';
+        bar.style.transform = `scaleX(${pct.toFixed(3)})`;
+        if (pct >= 1 || t > 5000) {
+          bar.style.transform = 'scaleX(1)';
           setTimeout(() => {
             pl.classList.add('done');
             document.body.classList.remove('is-loading');
             sessionStorage.setItem('st_seen_intro', '1');
             resolve();
-            setTimeout(() => pl.remove(), 1400);
-          }, 250);
+            setTimeout(() => pl.remove(), 700);
+          }, 200);
         } else {
           requestAnimationFrame(step);
         }
