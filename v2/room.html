@@ -592,16 +592,14 @@ async function resolveLibraryTitle(media, token) {
   video.querySelectorAll('track').forEach(t => t.remove());
   activeSub = -1;
   const q = `?se=${media.se || 0}&ep=${media.ep || 0}`;
+  subtitles = [];
+  renderSubtitleMenu();
+  loadSubtitles(media, q, token);   // in parallel; the video never waits for subtitles
   try {
-    const [res, caps] = await Promise.all([
-      MB.get(`/api/stream/${encodeURIComponent(media.mb)}${q}`),
-      MB.get(`/api/stream/${encodeURIComponent(media.mb)}/captions${q}`).catch(() => ({ captions: [] }))
-    ]);
+    const res = await MB.get(`/api/stream/${encodeURIComponent(media.mb)}${q}`);
     if (token !== mediaToken) return;
     mediaStreams = MB.rankStreams(res.streams);
     if (!mediaStreams.length) throw new Error('No playable version of this title was found.');
-    subtitles = (caps.captions || []).sort((a, b) => (b.code === 'en') - (a.code === 'en'));
-    renderSubtitleMenu();
     playStream(0, false);
     hideMediaStatus();
   } catch (e) {
@@ -610,10 +608,30 @@ async function resolveLibraryTitle(media, token) {
   }
 }
 
+// Subtitle lookups sometimes fail on a cold start; try a few times before giving up
+async function loadSubtitles(media, q, token) {
+  for (let attempt = 0; attempt < 4 && token === mediaToken; attempt++) {
+    try {
+      const caps = await MB.get(`/api/stream/${encodeURIComponent(media.mb)}/captions${q}`);
+      if (token !== mediaToken) return;
+      subtitles = (caps.captions || []).sort((a, b) => (b.code === 'en') - (a.code === 'en'));
+      renderSubtitleMenu();
+      return;
+    } catch (e) {
+      await new Promise(r => setTimeout(r, 3000 * (attempt + 1)));
+    }
+  }
+}
+
 // Switch to one of the title's versions; with keep=true the position and play state carry over
+let sourceChangedAt = 0;   // a fresh source is still loading: falling behind then isn't the device's fault
+let qualityPickedAt = -1e9; // the viewer chose a quality themselves: don't override it for a while
+
 function playStream(i, keep) {
   const resume = keep ? { time: video.currentTime, paused: video.paused } : null;
   streamIndex = i;
+  sourceChangedAt = performance.now();
+  hardSyncs.length = 0;
   setupVideoSource(MB.proxied(mediaStreams[i]), keep);
   renderQualityMenu();
   if (!resume) return;
@@ -624,10 +642,16 @@ function playStream(i, keep) {
   }, { once: true });
 }
 
-// A version that fails (expired link, rate limit, bad file) falls through to the next one
+// A version that fails (expired link, rate limit, bad file) falls through to the next one.
+// One failure is often just a dropped piece on a slow link, so retry the same version first.
+let lastRetry = { index: -1, at: 0 };
 video.addEventListener('error', () => {
   if (!currentMedia || !currentMedia.mb || !video.getAttribute('src')) return;
-  if (streamIndex + 1 < mediaStreams.length) {
+  if (lastRetry.index !== streamIndex || performance.now() - lastRetry.at > 60000) {
+    lastRetry = { index: streamIndex, at: performance.now() };
+    showToast('Connection hiccup — reloading the video');
+    playStream(streamIndex, true);
+  } else if (streamIndex + 1 < mediaStreams.length) {
     showToast('That version failed — trying another');
     playStream(streamIndex + 1, true);
   } else {
@@ -672,7 +696,10 @@ function renderSubtitleMenu() {
 playerMenu.addEventListener('click', e => {
   const q = e.target.closest('[data-q]');
   const sub = e.target.closest('[data-sub]');
-  if (q && Number(q.dataset.q) !== streamIndex) playStream(Number(q.dataset.q), true);
+  if (q && Number(q.dataset.q) !== streamIndex) {
+    qualityPickedAt = performance.now();
+    playStream(Number(q.dataset.q), true);
+  }
   if (sub) setSubtitle(Number(sub.dataset.sub));
 });
 
@@ -825,10 +852,16 @@ function hardSync(exp) {
 // step down to a lighter version once, or suggest it
 function noteHardSync() {
   const now = performance.now();
+  if (now - sourceChangedAt < 20000 || now - qualityPickedAt < 120000) return;
   hardSyncs.push(now);
   while (hardSyncs.length && now - hardSyncs[0] > 45000) hardSyncs.shift();
   if (hardSyncs.length < 3) return;
   hardSyncs.length = 0;
+  stepDown('This device is struggling to keep up — close other apps or tabs');
+}
+
+// Switch to the next lighter version, if there is one
+function stepDown(fallbackMessage) {
   const height = s => s.quality_value || parseInt(s.quality, 10) || 0;
   const cur = mediaStreams[streamIndex];
   const lighter = cur && mediaStreams
@@ -838,10 +871,36 @@ function noteHardSync() {
   if (lighter) {
     showToast(`Switched to ${lighter.s.quality} to keep up with the room`);
     playStream(lighter.i, true);
-  } else {
-    showToast('This device is struggling to keep up — close other apps or tabs');
+    return true;
   }
+  if (fallbackMessage) showToast(fallbackMessage);
+  return false;
 }
+
+// Slow-connection check: if video downloads slower than it plays and the buffer is running
+// low, step down before the viewer hits buffering (never over a quality they picked themselves)
+const BW_WINDOW_MS = 15000;
+let bwSample = null;       // { at, end } buffered end at the start of the window
+function bufferedEnd() {
+  const b = video.buffered, t = video.currentTime;
+  for (let i = 0; i < b.length; i++) if (b.start(i) <= t + 0.5 && b.end(i) >= t) return b.end(i);
+  return t;
+}
+setInterval(() => {
+  const now = performance.now();
+  const watching = currentMedia && currentMedia.mb && clock && clock.playing && !waitingForTap && video.readyState >= 1;
+  if (!watching || now - sourceChangedAt < 10000 || now - qualityPickedAt < 120000) { bwSample = null; return; }
+  const end = bufferedEnd();
+  if (!bwSample) { bwSample = { at: now, end }; return; }
+  if (now - bwSample.at < BW_WINDOW_MS) return;
+  // Seconds of video downloaded per second; playing needs at least 1
+  const pace = (end - bwSample.end) / ((now - bwSample.at) / 1000);
+  const ahead = end - video.currentTime;
+  bwSample = { at: now, end };
+  if (pace < 1 && ahead < 12) stepDown();
+}, 5000);
+video.addEventListener('seeking', () => { bwSample = null; }); // a jump isn't download progress
+
 function enginePause(hold) {
   holding = hold;
   if (!video.paused) video.pause();
