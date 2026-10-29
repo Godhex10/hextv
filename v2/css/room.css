@@ -346,3 +346,11 @@ button.sync-badge[data-state="behind"]:hover { background: rgba(245, 158, 11, 0.
   .sync-badge[data-state="offline"] .sync-text { display: inline; }
   .sync-badge[data-state="behind"], .sync-badge[data-state="offline"] { padding: 0.22rem 0.55rem; }
 }
+
+/* ── YouTube player ── */
+.yt-wrap { position: absolute; inset: 0; z-index: 1; background: #000; }
+.yt-wrap[hidden] { display: none; }
+.yt-wrap iframe { width: 100%; height: 100%; border: 0; display: block; }
+/* Taps land here so play/pause/seek go through the room, not straight to YouTube */
+.yt-shield { position: absolute; inset: 0; z-index: 2; cursor: pointer; }
+.yt-shield[hidden] { display: none; }

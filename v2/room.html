@@ -12,6 +12,7 @@
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
 <script src="js/moviebox.js"></script>
 <script src="js/rooms.js"></script>
+<script src="js/youtube.js"></script>
 
 <link rel="stylesheet" href="css/base.css">
 <link rel="stylesheet" href="css/room.css">
@@ -55,7 +56,7 @@
 
       <!-- Hide url-overlay immediately if stream URL is in params (before JS runs) -->
       <script>
-        if (/[?&](stream|mb)=/.test(location.search)) {
+        if (/[?&](stream|mb|yt)=/.test(location.search)) {
           document.write('<style>#urlOverlay{display:none!important}</style>');
         }
       </script>
@@ -90,15 +91,16 @@
         <div class="url-overlay-glow" aria-hidden="true"></div>
         <div class="url-overlay-icon"><i class="fa-solid fa-film"></i></div>
         <h2>Load a Video</h2>
-        <p>Paste a direct video URL (.mp4 or any direct link) to start your watch party. Everyone in the room will see it.</p>
+        <p>Paste a YouTube link or a direct video URL (.mp4) to start your watch party. Everyone in the room will see it.</p>
         <div class="url-input-row">
           <div class="url-field">
             <i class="fa-solid fa-link" aria-hidden="true"></i>
-            <input type="url" class="url-input" id="videoUrlInput" placeholder="https://example.com/movie.mp4" autocomplete="off" aria-label="Video URL">
+            <input type="url" class="url-input" id="videoUrlInput" placeholder="YouTube link or https://…/movie.mp4" autocomplete="off" aria-label="Video URL">
             <button class="btn-load" id="loadVideoBtn"><i class="fa-solid fa-bolt"></i> Load</button>
           </div>
           <div class="url-extras">
             <button type="button" class="sample-chip" data-sample="https://media.w3.org/2010/05/sintel/trailer.mp4"><i class="fa-solid fa-wand-magic-sparkles"></i> Try a sample video</button>
+            <button type="button" class="sample-chip" data-sample="https://www.youtube.com/watch?v=aqz-KE-bpKQ"><i class="fa-brands fa-youtube"></i> Try a YouTube video</button>
             <a class="sample-chip" href="library.html"><i class="fa-solid fa-film"></i> Browse the library</a>
             <a class="sample-chip" href="how-to.html"><i class="fa-regular fa-circle-question"></i> How to get a link</a>
           </div>
@@ -106,6 +108,9 @@
       </div>
 
       <video id="videoPlayer" preload="auto" playsinline webkit-playsinline class="video-hidden" aria-label="Watch party video player"></video>
+      <div class="yt-wrap" id="ytWrap" hidden></div>
+      <!-- Over the YouTube player: taps go to the room, not straight to YouTube -->
+      <div class="yt-shield" id="ytShield" hidden></div>
       <div class="buffer-spin" id="bufferSpin" hidden aria-hidden="true"></div>
       <div class="behind-note" id="behindNote" hidden role="status"></div>
     </div>
@@ -256,6 +261,7 @@ if (directTitle) document.getElementById('roomNameDisplay').textContent = direct
 // What the link says to watch: a MovieBox title (mb/se/ep) or a pasted direct URL
 const linkMedia = params.get('mb')
   ? { mb: params.get('mb'), se: Number(params.get('se')) || 0, ep: Number(params.get('ep')) || 0, title: directTitle || '' }
+  : params.get('yt') ? { yt: params.get('yt'), title: directTitle || '' }
   : directStreamUrl ? { url: directStreamUrl, title: directTitle || '' } : null;
 
 let myName  = localStorage.getItem('st_username') || 'Guest_' + Math.floor(Math.random() * 900 + 100);
@@ -396,7 +402,10 @@ function refreshViewers() {
 /* ══════════════════════════════════════════════
     VIDEO PLAYER
 ══════════════════════════════════════════════ */
-const video         = document.getElementById('videoPlayer');
+const videoEl       = document.getElementById('videoPlayer');
+const yt            = RoomYouTube.create(videoEl, document.getElementById('ytWrap'));
+const video         = yt.facade;   // the <video> element, or YouTube when a YouTube link is playing
+window.roomVideo    = video;
 const urlOverlay    = document.getElementById('urlOverlay');
 const urlInput      = document.getElementById('videoUrlInput');
 const progressFill  = document.getElementById('progressFill');
@@ -413,7 +422,9 @@ urlInput.addEventListener('keydown', e => { if (e.key === 'Enter') loadVideo(); 
 function loadVideo() {
   const url = urlInput.value.trim();
   if (!url) return;
-  const media = { url, title: document.getElementById('roomNameDisplay').textContent };
+  const ytId = RoomYouTube.parse(url);
+  // A YouTube video names itself once its player is ready
+  const media = ytId ? { yt: ytId, title: '' } : { url, title: document.getElementById('roomNameDisplay').textContent };
   loadMedia(media);
   setClock({ playing: false, time: 0, at: serverNow() });
   addSystemMsg('Video loaded — press play to start');
@@ -443,6 +454,8 @@ function togglePlay() {
 playPauseBtn.addEventListener('click', togglePlay);
 video.addEventListener('click', togglePlay);
 video.addEventListener('dblclick', () => document.getElementById('fullscreenBtn').click());
+document.getElementById('ytShield').addEventListener('click', togglePlay);
+document.getElementById('ytShield').addEventListener('dblclick', () => document.getElementById('fullscreenBtn').click());
 
 function skipVideo(sec) {
   if (!videoLoaded) return;
@@ -527,6 +540,8 @@ let hlsInstance = null;
 
 function setupVideoSource(url, quiet) {
   if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
+  yt.deactivate();
+  document.getElementById('ytShield').hidden = true;
 
   video.classList.remove('video-hidden');
   urlOverlay.style.display = 'none';
@@ -539,7 +554,7 @@ function setupVideoSource(url, quiet) {
   if (isHLS && typeof Hls !== 'undefined' && Hls.isSupported()) {
     hlsInstance = new Hls({ enableWorker: true });
     hlsInstance.loadSource(url);
-    hlsInstance.attachMedia(video);
+    hlsInstance.attachMedia(videoEl);
     hlsInstance.on(Hls.Events.ERROR, (_, data) => {
       if (data.fatal) addSystemMsg('HLS stream error — try a different stream');
     });
@@ -571,7 +586,8 @@ let activeSub    = -1;
 
 const mediaStatus = document.getElementById('mediaStatus');
 const sameMedia = (a, b) => !!a && !!b &&
-  (a.mb ? a.mb === b.mb && (a.se || 0) === (b.se || 0) && (a.ep || 0) === (b.ep || 0) : a.url === b.url);
+  (a.mb ? a.mb === b.mb && (a.se || 0) === (b.se || 0) && (a.ep || 0) === (b.ep || 0)
+   : a.yt ? a.yt === b.yt : a.url === b.url);
 
 function loadMedia(media) {
   if (mediaReady && sameMedia(media, currentMedia)) return mediaReady;
@@ -582,10 +598,45 @@ function loadMedia(media) {
   // Keep the address bar (and so the invite link) pointing at what's playing
   history.replaceState(null, '', MB.roomUrl(media, roomId));
   showInviteLink();
-  mediaReady = media.mb ? resolveLibraryTitle(media, token) : Promise.resolve(setupVideoSource(media.url));
+  mediaReady = media.mb ? resolveLibraryTitle(media, token)
+    : media.yt ? setupYouTube(media, token)
+    : Promise.resolve(setupVideoSource(media.url));
   mediaReady.catch(() => { if (token === mediaToken) mediaReady = null; });
   return mediaReady;
 }
+
+async function setupYouTube(media, token) {
+  if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
+  urlOverlay.style.display = 'none';
+  videoEl.classList.add('video-hidden');
+  mediaStreams = [];
+  subtitles = [];
+  renderQualityMenu();
+  renderSubtitleMenu();
+  showMediaStatus('Loading the YouTube video…');
+  try {
+    const title = await yt.activate(media.yt);
+    if (token !== mediaToken) return;
+    videoLoaded = true;
+    hasPlayedOnce = false;
+    document.getElementById('ytShield').hidden = false;
+    if (!media.title && title) {
+      media.title = title;
+      document.getElementById('roomNameDisplay').textContent = title;
+      history.replaceState(null, '', MB.roomUrl(media, roomId));
+      showInviteLink();
+    }
+    hideMediaStatus();
+  } catch (e) {
+    if (token === mediaToken) showMediaStatus(e.message, true);
+    throw e;
+  }
+}
+
+// YouTube refusing a video after it loaded (embedding disabled, removed…)
+videoEl.addEventListener('error', () => {
+  if (yt.active && yt.lastError) showMediaStatus(yt.lastError, true);
+});
 
 async function resolveLibraryTitle(media, token) {
   urlOverlay.style.display = 'none';
@@ -681,7 +732,10 @@ const playerMenu = document.getElementById('playerMenu');
 
 function renderQualityMenu() {
   const list = document.getElementById('qualityList');
-  if (!currentMedia || !currentMedia.mb) { list.innerHTML = '<p class="menu-empty">Only for library titles</p>'; return; }
+  if (!currentMedia || !currentMedia.mb) {
+    list.innerHTML = `<p class="menu-empty">${currentMedia && currentMedia.yt ? 'YouTube picks the quality automatically' : 'Only for library titles'}</p>`;
+    return;
+  }
   list.innerHTML = mediaStreams.map((st, i) => {
     const size = st.size_mb ? (st.size_mb >= 1024 ? (st.size_mb / 1024).toFixed(1) + ' GB' : Math.round(st.size_mb) + ' MB') : '';
     return `<button class="menu-opt${i === streamIndex ? ' active' : ''}" data-q="${i}">${escapeHTML(st.quality || 'Auto')}${size ? `<small>${size}</small>` : ''}</button>`;
@@ -1401,7 +1455,7 @@ window.addEventListener('DOMContentLoaded', () => {
 /* Presentation-only extras for the room. They react to the video and
    inputs the room script already drives — sync/chat logic is untouched. */
 (function () {
-  const v = document.getElementById('videoPlayer');
+  const v = window.roomVideo || document.getElementById('videoPlayer');
 
   // Volume icon + slider fill. The room script writes an emoji into the
   // mute button; volumechange fires right after, so the icon wins.
@@ -1439,7 +1493,8 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Space toggles play, arrows skip 10s (when not typing)
   document.addEventListener('keydown', e => {
-    if (/input|textarea|select/i.test(document.activeElement.tagName) || v.classList.contains('video-hidden')) return;
+    // (the <video> stays hidden while YouTube plays, so ask the room whether anything is loaded)
+    if (/input|textarea|select/i.test(document.activeElement.tagName) || !videoLoaded) return;
     if (e.code === 'Space') { e.preventDefault(); document.getElementById('playPauseBtn').click(); }
     if (e.code === 'ArrowLeft') { e.preventDefault(); skipVideo(-10); }
     if (e.code === 'ArrowRight') { e.preventDefault(); skipVideo(10); }

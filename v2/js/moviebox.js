@@ -54,6 +54,8 @@
       p.set('mb', media.mb);
       if (media.se) p.set('se', media.se);
       if (media.ep) p.set('ep', media.ep);
+    } else if (media.yt) {
+      p.set('yt', media.yt);
     } else if (media.url) {
       p.set('stream', media.url);
     }
