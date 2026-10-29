@@ -89,6 +89,9 @@ export class Room extends DurableObject {
     }
     const room = this.room || { media: null, clock: null };
     const clock = room.clock;
+    // Play/pause/seek carry the media too, so the room knows what's on even when it was
+    // started from a link rather than loaded in the room
+    if (data.type !== 'load' && data.type !== 'state' && data.media && typeof data.media === 'object') room.media = data.media;
     if (data.type === 'load') {
       room.media = data.media || (data.src ? { url: data.src, title: data.title || '' } : room.media);
       room.clock = { playing: false, time: 0, at: now };
