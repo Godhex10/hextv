@@ -40,6 +40,18 @@ let configCache = { at: 0, data: null };
 let signingKeyCache = null;
 const loginAttempts = new Map();   // ip -> { start, n }
 
+// Rooms and stats only serve HexTV's own pages, so a copied site can't run on this server.
+// Browsers always send Origin on WebSockets and POSTs; requests without one aren't from a web page.
+const SITE_HOSTS = ['streamtogether-pi.vercel.app', 'localhost', '127.0.0.1'];
+function siteAllowed(request, env) {
+  const origin = request.headers.get('Origin');
+  if (!origin || origin === 'null') return !origin;
+  let host;
+  try { host = new URL(origin).hostname.toLowerCase(); } catch { return false; }
+  const extra = (env.ALLOWED_SITE_HOSTS || '').split(',').map(h => h.trim().toLowerCase()).filter(Boolean);
+  return SITE_HOSTS.includes(host) || extra.includes(host);
+}
+
 async function sha256Hex(text) {
   const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
   return [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, '0')).join('');
@@ -78,6 +90,7 @@ export default {
     if (path === '/') return new Response('HexTV room server');
 
     const m = path.match(/^\/room\/([A-Za-z0-9_-]{1,64})$/);
+    if ((m || path === '/t') && !siteAllowed(request, env)) return new Response('Not allowed from this site', { status: 403, headers: CORS });
     if (m) {
       if (request.headers.get('Upgrade') !== 'websocket') return new Response('Expected a WebSocket', { status: 426 });
       const headers = new Headers(request.headers);
