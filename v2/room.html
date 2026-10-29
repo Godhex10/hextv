@@ -464,18 +464,26 @@ let singleTapTimer = null;
 tapLayer.addEventListener('pointerup', e => {
   if (!videoLoaded) return;
   const r = tapLayer.getBoundingClientRect();
-  // While the player is turned 90° by CSS, "right" on screen runs top-to-bottom
+  // Thirds across the picture: back 10s | play/pause | forward 10s.
+  // While the player is turned 90° by CSS, "across" on screen runs top-to-bottom.
   const turned = document.body.classList.contains('fs-rotate') && window.matchMedia('(orientation: portrait)').matches;
-  const right = turned ? e.clientY > r.top + r.height / 2 : e.clientX > r.left + r.width / 2;
+  const f = turned ? (e.clientY - r.top) / r.height : (e.clientX - r.left) / r.width;
+  const zone = f < 1 / 3 ? 'left' : f > 2 / 3 ? 'right' : 'mid';
   const now = performance.now();
-  if (lastTap && now - lastTap.at < DOUBLE_TAP_MS && lastTap.right === right) {
+  if (lastTap && now - lastTap.at < DOUBLE_TAP_MS && lastTap.zone === zone) {
     clearTimeout(singleTapTimer);
     lastTap = null;
-    skipVideo(right ? 10 : -10);
-    showSkipFlash(right);
+    if (zone === 'mid') {
+      const wasPlaying = clock ? clock.playing : !video.paused;
+      togglePlay();
+      showTapFlash('mid', wasPlaying ? 'fa-pause' : 'fa-play', '');
+    } else {
+      skipVideo(zone === 'right' ? 10 : -10);
+      showTapFlash(zone, zone === 'right' ? 'fa-forward' : 'fa-backward', '10s');
+    }
     return;
   }
-  lastTap = { at: now, right };
+  lastTap = { at: now, zone };
   clearTimeout(singleTapTimer);
   singleTapTimer = setTimeout(() => { lastTap = null; onSingleTap(); }, DOUBLE_TAP_MS);
 });
@@ -485,11 +493,11 @@ function onSingleTap() {
   if (document.body.classList.contains('fs')) toggleFsControls();
 }
 
-// "+10s" / "−10s" ripple on the side that was double-tapped
-function showSkipFlash(right) {
+// Ripple where the picture was double-tapped: skip on the sides, play/pause in the middle
+function showTapFlash(zone, icon, label) {
   const el = document.createElement('div');
-  el.className = 'skip-flash ' + (right ? 'right' : 'left');
-  el.innerHTML = right ? '<i class="fa-solid fa-forward"></i><span>10s</span>' : '<i class="fa-solid fa-backward"></i><span>10s</span>';
+  el.className = 'skip-flash ' + zone;
+  el.innerHTML = `<i class="fa-solid ${icon}"></i>${label ? `<span>${label}</span>` : ''}`;
   document.querySelector('.player-wrap').appendChild(el);
   setTimeout(() => el.remove(), 650);
 }

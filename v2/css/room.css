@@ -412,3 +412,5 @@ body.fs:not(.show-controls) .player-menu { display: none; }
 .skip-flash.left { left: 12%; }
 .skip-flash.right { right: 12%; }
 @keyframes skipFlash { 20% { opacity: 1; transform: translateY(-50%) scale(1); } 100% { opacity: 0; transform: translateY(-50%) scale(1.05); } }
+.skip-flash.mid { left: 50%; margin-left: -32px; width: 64px; height: 64px; padding: 0; justify-content: center; }
+.skip-flash.mid i { font-size: 1.4rem; }
