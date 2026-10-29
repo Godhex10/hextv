@@ -1,13 +1,20 @@
-/* StreamTogether room server — one Durable Object per watch-party room.
+/* HexTV room server — one Durable Object per watch-party room, plus the Stats object.
 
-   Clients connect with a WebSocket to /room/<roomId>?clientId=&name=&color=.
+   Clients connect with a WebSocket to /room/<roomId>?clientId=&name=&color=&vid=&platform=.
    The room relays chat, reactions and sync messages between its viewers, keeps
    the viewer list, and remembers what's playing plus the shared room clock, so
    a newcomer gets the room's state straight from the server.
 
+   Also served here:
+     POST /t              anonymous page telemetry (see stats.js)
+     GET  /config         public settings: announcement banner, "new rooms paused"
+     /admin/*             the dashboard's API, behind a password login
+     cron (every 15 min)  health checks and alert rules
+
    Uses the WebSocket Hibernation API: an idle room is evicted from memory
    without dropping its connections, and isn't billed while it sleeps. */
 import { DurableObject } from 'cloudflare:workers';
+export { Stats } from './stats.js';
 
 const MAX_MESSAGE_BYTES = 8 * 1024;
 const MAX_CHAT_CHARS = 500;
@@ -15,52 +22,251 @@ const RATE_WINDOW_MS = 10_000;
 const RATE_MAX = 40;                     // messages per viewer per window; the rest are dropped
 const IDLE_CLEANUP_MS = 24 * 3600_000;   // forget an empty room's state after a day
 const CHANNELS = new Set(['video_sync', 'chat_message', 'reaction']);
+const TOKEN_TTL_MS = 7 * 24 * 3600_000;
+
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Max-Age': '86400'
+};
+const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json', ...CORS } });
+const stats = env => env.STATS.get(env.STATS.idFromName('global'));
+const statsCall = (env, path, body) => stats(env).fetch('https://stats' + path,
+  body === undefined ? undefined : { method: 'POST', body: JSON.stringify(body) });
+
+// Per-isolate caches: they save Durable Object requests on hot paths
+let configCache = { at: 0, data: null };
+let signingKeyCache = null;
+const loginAttempts = new Map();   // ip -> { start, n }
+
+async function sha256Hex(text) {
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+async function hmacHex(keyHex, text) {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(keyHex), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(text));
+  return [...new Uint8Array(sig)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+function safeEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
+  let d = 0;
+  for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return d === 0;
+}
+async function signingKey(env) {
+  if (!signingKeyCache) signingKeyCache = (await (await statsCall(env, '/signing-key')).json()).key;
+  return signingKeyCache;
+}
+async function issueToken(env) {
+  const exp = String(Date.now() + TOKEN_TTL_MS);
+  return exp + '.' + (await hmacHex(await signingKey(env), 'admin:' + exp));
+}
+async function validToken(env, header) {
+  const token = (header || '').replace(/^Bearer\s+/i, '');
+  const [exp, sig] = token.split('.');
+  if (!exp || !sig || Number(exp) < Date.now()) return false;
+  return safeEqual(sig, await hmacHex(await signingKey(env), 'admin:' + exp));
+}
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (url.pathname === '/') return new Response('StreamTogether room server');
-    const m = url.pathname.match(/^\/room\/([A-Za-z0-9_-]{1,64})$/);
-    if (!m) return new Response('Not found', { status: 404 });
-    if (request.headers.get('Upgrade') !== 'websocket') return new Response('Expected a WebSocket', { status: 426 });
-    return env.ROOMS.get(env.ROOMS.idFromName(m[1])).fetch(request);
+    const path = url.pathname;
+    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
+    if (path === '/') return new Response('HexTV room server');
+
+    const m = path.match(/^\/room\/([A-Za-z0-9_-]{1,64})$/);
+    if (m) {
+      if (request.headers.get('Upgrade') !== 'websocket') return new Response('Expected a WebSocket', { status: 426 });
+      const headers = new Headers(request.headers);
+      headers.set('x-room', m[1]);
+      return env.ROOMS.get(env.ROOMS.idFromName(m[1])).fetch(new Request(request, { headers }));
+    }
+
+    if (path === '/t' && request.method === 'POST') {
+      const text = await request.text();
+      if (text.length > 16 * 1024) return new Response(null, { status: 413, headers: CORS });
+      let body;
+      try { body = JSON.parse(text); } catch { return new Response(null, { status: 400, headers: CORS }); }
+      body.country = (request.cf && request.cf.country) || '';
+      await statsCall(env, '/telemetry', body);
+      return new Response(null, { status: 204, headers: CORS });
+    }
+
+    if (path === '/config') {
+      if (!configCache.data || Date.now() - configCache.at > 60_000) {
+        configCache = { at: Date.now(), data: await (await statsCall(env, '/config')).json() };
+      }
+      return json(configCache.data);
+    }
+
+    if (path === '/admin/login' && request.method === 'POST') {
+      const ip = request.headers.get('CF-Connecting-IP') || 'x';
+      const a = loginAttempts.get(ip);
+      const now = Date.now();
+      if (a && now - a.start < 60_000 && a.n >= 6) return json({ error: 'Too many attempts — wait a minute' }, 429);
+      loginAttempts.set(ip, a && now - a.start < 60_000 ? { start: a.start, n: a.n + 1 } : { start: now, n: 1 });
+      const { password } = await request.json().catch(() => ({}));
+      if (!env.DASHBOARD_PASSWORD_SHA256) return json({ error: 'Dashboard password is not configured' }, 503);
+      if (!safeEqual(await sha256Hex(String(password || '')), env.DASHBOARD_PASSWORD_SHA256)) return json({ error: 'Wrong password' }, 401);
+      return json({ token: await issueToken(env) });
+    }
+
+    if (path.startsWith('/admin/')) {
+      if (!(await validToken(env, request.headers.get('Authorization')))) return json({ error: 'Not signed in' }, 401);
+      const body = request.method === 'POST' ? await request.json().catch(() => ({})) : undefined;
+      if (path === '/admin/summary') {
+        const r = await stats(env).fetch('https://stats/summary?days=' + encodeURIComponent(url.searchParams.get('days') || '1'));
+        return json(await r.json());
+      }
+      if (path === '/admin/settings' && body) {
+        configCache.at = 0;
+        return json(await (await statsCall(env, '/settings', body)).json());
+      }
+      if (path === '/admin/test-alert') return json(await (await statsCall(env, '/test-alert', {})).json());
+      const room = clean((body && body.room) || url.searchParams.get('room'), 64);
+      if (room && path.startsWith('/admin/room/')) {
+        const action = path.slice('/admin/room/'.length);
+        if (!['viewers', 'close', 'kick'].includes(action)) return json({ error: 'Unknown action' }, 404);
+        const r = await env.ROOMS.get(env.ROOMS.idFromName(room)).fetch('https://room/internal/' + action, {
+          method: 'POST', headers: { 'x-room': room }, body: JSON.stringify(body || {})
+        });
+        return json(await r.json());
+      }
+      return json({ error: 'Not found' }, 404);
+    }
+    return new Response('Not found', { status: 404 });
+  },
+
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(statsCall(env, '/cron', {}));
   }
 };
+
+const mediaType = m => (!m ? '' : m.mb ? (m.se ? 'series' : 'movie') : m.yt ? 'youtube' : 'link');
+// Fields starting with "_" are private to the server (platform, anonymous viewer id)
+const publicMember = m => (m ? { clientId: m.clientId, data: m.data, timestamp: m.timestamp } : m);
 
 export class Room extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     this.room = null;           // { media, clock } — what's playing and where
     this.rates = new Map();     // clientId -> { start, count }; fine to lose on eviction
-    ctx.blockConcurrencyWhile(async () => { this.room = (await ctx.storage.get('room')) || null; });
+    this.wsMsgs = 0;            // incoming messages since the last stats report
+    this.settings = { at: 0, v: null };
+    ctx.blockConcurrencyWhile(async () => {
+      this.room = (await ctx.storage.get('room')) || null;
+      this.openedAt = (await ctx.storage.get('openedAt')) || null;
+      this.name = (await ctx.storage.get('name')) || '';
+    });
     // Keepalive pings are answered without waking the room
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
   }
 
+  async getSettings() {
+    if (!this.settings.v || Date.now() - this.settings.at > 60_000) {
+      try { this.settings = { at: Date.now(), v: await (await statsCall(this.env, '/config')).json() }; }
+      catch { this.settings = { at: Date.now(), v: this.settings.v || {} }; }
+    }
+    return this.settings.v;
+  }
+
+  async report(event, extra = {}) {
+    if (!this.name) return;
+    const ms = this.members();
+    const app = ms.filter(m => m._p === 'app').length;
+    const media = this.room && this.room.media;
+    const body = {
+      room: this.name, event, viewers: ms.length, web: ms.length - app, app,
+      media: media ? { type: mediaType(media), title: media.title || '' } : null,
+      playing: !!(this.room && this.room.clock && this.room.clock.playing),
+      openedAt: this.openedAt, wsMsgs: this.wsMsgs, ...extra
+    };
+    this.wsMsgs = 0;
+    try { await statsCall(this.env, '/report', body); } catch { /* stats are best-effort */ }
+  }
+
   async fetch(request) {
-    const params = new URL(request.url).searchParams;
+    const url = new URL(request.url);
+    const roomName = clean(request.headers.get('x-room'), 64);
+    if (roomName && roomName !== this.name) { this.name = roomName; await this.ctx.storage.put('name', roomName); }
+    if (url.pathname.startsWith('/internal/')) return this.internal(url.pathname.slice('/internal/'.length), await request.json().catch(() => ({})));
+
+    const params = url.searchParams;
     const clientId = clean(params.get('clientId'), 64) || crypto.randomUUID();
-    // A reconnecting viewer replaces their old socket instead of appearing twice
-    for (const old of this.ctx.getWebSockets(clientId)) old.close(4000, 'replaced');
+    const vid = clean(params.get('vid'), 40);
+    const platform = params.get('platform') === 'app' ? 'app' : 'web';
 
     const [client, server] = Object.values(new WebSocketPair());
+    const others = this.ctx.getWebSockets().filter(s => s.readyState === WebSocket.READY_STATE_OPEN);
+    const blocked = (await this.ctx.storage.get('blocked')) || [];
+    const settings = await this.getSettings();
+    // Removed viewers, and new rooms while the emergency switch is on, get a reason instead of a room
+    const refuse = vid && blocked.includes(vid) ? { reason: 'kicked', message: 'You were removed from this room.' }
+      : settings.newRoomsPaused && !others.length ? { reason: 'paused', message: 'HexTV is paused for maintenance. Please try again soon.' } : null;
+    if (refuse) {
+      server.accept();
+      server.send(JSON.stringify({ t: 'closed', ...refuse }));
+      server.close(4001, refuse.reason);
+      return new Response(null, { status: 101, webSocket: client });
+    }
+
+    // A reconnecting viewer replaces their old socket instead of appearing twice
+    for (const old of this.ctx.getWebSockets(clientId)) old.close(4000, 'replaced');
+    const created = !others.length && !this.openedAt;
+    if (!this.openedAt) { this.openedAt = Date.now(); await this.ctx.storage.put('openedAt', this.openedAt); }
+
     this.ctx.acceptWebSocket(server, [clientId]);
     const member = {
       clientId,
       data: { name: clean(params.get('name'), 40) || 'Guest', color: clean(params.get('color'), 20) || '#555' },
-      timestamp: Date.now()
+      timestamp: Date.now(), _p: platform, _v: vid
     };
     server.serializeAttachment(member);
-    server.send(JSON.stringify({ t: 'welcome', clientId, serverTime: Date.now(), members: this.members(), room: this.room }));
-    this.broadcast({ t: 'presence', action: 'enter', member, members: this.members() }, server);
+    server.send(JSON.stringify({ t: 'welcome', clientId, serverTime: Date.now(), members: this.members().map(publicMember), room: this.room,
+      announcement: settings.announcement || '', announcementLevel: settings.announcementLevel || 'info' }));
+    this.broadcast({ t: 'presence', action: 'enter', member: publicMember(member), members: this.members().map(publicMember) }, server);
     await this.ctx.storage.deleteAlarm();
+    await this.report('enter', { created, inviteJoin: others.length > 0 });
     return new Response(null, { status: 101, webSocket: client });
+  }
+
+  // Admin actions, reached only through the worker's signed-in /admin routes
+  async internal(action, body) {
+    if (action === 'viewers') {
+      return Response.json({ viewers: this.members().map(m => ({ clientId: m.clientId, name: m.data.name, platform: m._p, since: m.timestamp })) });
+    }
+    if (action === 'close') {
+      this.broadcast({ t: 'closed', reason: 'admin', message: 'This room was closed by HexTV.' });
+      for (const ws of this.ctx.getWebSockets()) ws.close(4001, 'closed');
+      this.room = null;
+      await this.ctx.storage.delete('room');
+      await this.report('close', { viewers: 0 });
+      return Response.json({ ok: true });
+    }
+    if (action === 'kick') {
+      const target = this.ctx.getWebSockets(clean(body.clientId, 64))[0];
+      if (!target) return Response.json({ ok: false, error: 'Viewer not found' });
+      const m = target.deserializeAttachment() || {};
+      if (m._v) {
+        const blocked = (await this.ctx.storage.get('blocked')) || [];
+        if (!blocked.includes(m._v)) blocked.push(m._v);
+        await this.ctx.storage.put('blocked', blocked.slice(-200));
+      }
+      target.send(JSON.stringify({ t: 'closed', reason: 'kicked', message: 'You were removed from this room.' }));
+      target.close(4001, 'kicked');
+      return Response.json({ ok: true });
+    }
+    return Response.json({ error: 'unknown' }, { status: 404 });
   }
 
   async webSocketMessage(ws, raw) {
     if (typeof raw !== 'string' || raw.length > MAX_MESSAGE_BYTES) return;
     const me = ws.deserializeAttachment();
     if (!me || !this.allow(me.clientId)) return;
+    this.wsMsgs++;
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
     const now = Date.now();
@@ -71,7 +277,7 @@ export class Room extends DurableObject {
       const data = msg.data || {};
       me.data = { name: clean(data.name, 40) || me.data.name, color: clean(data.color, 20) || me.data.color };
       ws.serializeAttachment(me);
-      this.broadcast({ t: 'presence', action: 'update', member: me, members: this.members() });
+      this.broadcast({ t: 'presence', action: 'update', member: publicMember(me), members: this.members().map(publicMember) });
     } else if (msg.t === 'pub' && CHANNELS.has(msg.name) && msg.data && typeof msg.data === 'object') {
       if (msg.name === 'chat_message' && typeof msg.data.text === 'string') msg.data.text = msg.data.text.slice(0, MAX_CHAT_CHARS);
       if (msg.name === 'video_sync' && (await this.onSync(msg.data, me.clientId, ws, now))) return;
@@ -89,6 +295,7 @@ export class Room extends DurableObject {
     }
     const room = this.room || { media: null, clock: null };
     const clock = room.clock;
+    const before = { title: room.media && room.media.title, playing: !!(clock && clock.playing) };
     // Play/pause/seek carry the media too, so the room knows what's on even when it was
     // started from a link rather than loaded in the room
     if (data.type !== 'load' && data.type !== 'state' && data.media && typeof data.media === 'object') room.media = data.media;
@@ -111,6 +318,9 @@ export class Room extends DurableObject {
     }
     this.room = room;
     await this.ctx.storage.put('room', room);
+    // The dashboard's live view only needs to hear about what changed
+    const after = { title: room.media && room.media.title, playing: !!(room.clock && room.clock.playing) };
+    if (after.title !== before.title || after.playing !== before.playing) await this.report('state');
     return false;
   }
 
@@ -125,15 +335,24 @@ export class Room extends DurableObject {
 
   async leave(ws) {
     const me = ws.deserializeAttachment();
-    const others = this.ctx.getWebSockets().filter(s => s !== ws);
-    if (me) this.broadcast({ t: 'presence', action: 'leave', member: me, members: this.members(ws) }, ws);
-    if (!others.length) await this.ctx.storage.setAlarm(Date.now() + IDLE_CLEANUP_MS);
+    const others = this.ctx.getWebSockets().filter(s => s !== ws && s.readyState === WebSocket.READY_STATE_OPEN);
+    if (me) this.broadcast({ t: 'presence', action: 'leave', member: publicMember(me), members: this.members(ws).map(publicMember) }, ws);
+    if (!others.length) {
+      await this.report('close', { viewers: 0 });
+      this.openedAt = null;
+      await this.ctx.storage.delete('openedAt');
+      await this.ctx.storage.setAlarm(Date.now() + IDLE_CLEANUP_MS);
+    } else {
+      await this.report('leave');
+    }
   }
 
   async alarm() {
     if (!this.ctx.getWebSockets().length) {
       this.room = null;
+      const name = this.name;
       await this.ctx.storage.deleteAll();
+      if (name) await this.ctx.storage.put('name', name);
     }
   }
 
