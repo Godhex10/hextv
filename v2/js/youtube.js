@@ -79,6 +79,13 @@
     function onState(s) {
       const prev = state;
       state = s;
+      if (s === PLAYING && intent === 'pause') {
+        // Seeking a video that hasn't started makes YouTube start it. The room asked for it
+        // to wait (paused, or held until the room arrives), so put it back.
+        seekingUntil = 0;
+        player.pauseVideo();
+        return;
+      }
       if (s === PLAYING) {
         seekingUntil = 0;
         if (prev !== PLAYING) { fire('play'); fire('playing'); }
@@ -197,9 +204,23 @@
       set(prop, value) {
         if (!player || !ready) return;
         if (prop === 'currentTime') {
+          const target = Math.max(0, value);
           seekingUntil = performance.now() + 1500;
           fire('seeking');
-          player.seekTo(Math.max(0, value), true);
+          player.seekTo(target, true);
+          // A seek while paused often changes no player state, so nothing would say it finished
+          // (and the room would think seeks are slow). Watch for the position to land.
+          const started = performance.now();
+          const check = () => {
+            if (!player || !ready) return;
+            const landed = Math.abs((player.getCurrentTime() || 0) - target) < 1 && state !== BUFFERING;
+            if (landed || performance.now() - started > 3000) {
+              seekingUntil = 0;
+              fire('seeked');
+              fire('canplay');
+            } else setTimeout(check, 100);
+          };
+          setTimeout(check, 100);
         } else if (prop === 'playbackRate') {
           // YouTube only plays at its own fixed speeds; anything else stays at 1x
           const allowed = player.getAvailablePlaybackRates ? player.getAvailablePlaybackRates() : [1];

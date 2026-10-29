@@ -833,13 +833,13 @@ function setClock(c) {
 function userPlay() {
   const t = clock && !clock.playing ? clock.time : video.currentTime;
   setClock({ playing: true, time: t, at: serverNow() });
-  broadcastSync({ type: 'play', time: t, at: clock.at });
+  broadcastSync({ type: 'play', time: t, at: clock.at, media: currentMedia });
 }
 
 function userPause() {
   const t = video.currentTime;
   setClock({ playing: false, time: t, at: serverNow() });
-  broadcastSync({ type: 'pause', time: t });
+  broadcastSync({ type: 'pause', time: t, media: currentMedia });
 }
 
 // While playing, everyone jumps now and restarts together a moment later
@@ -847,7 +847,7 @@ function userSeek(t) {
   const playing = clock ? clock.playing : false;
   const at = serverNow() + (playing ? lead() * 1000 : 0);
   setClock({ playing, time: t, at });
-  broadcastSync({ type: 'seek', time: t, playing, at });
+  broadcastSync({ type: 'seek', time: t, playing, at, media: currentMedia });
 }
 
 function quietSeek(t) {
