@@ -1240,6 +1240,8 @@ PROXY_HEADER_KEYS = {"user-agent", "referer", "origin", "cookie"}
 PROXY_PASSTHROUGH = ("content-type", "content-length", "content-range", "accept-ranges", "content-encoding")
 # Serverless hosts cap request time (~30s) and response size (~4.5MB), so there each media
 # response is one bounded chunk. A long-running server streams whole ranges instead.
+# 4MB fits the 60s limit down to ~0.07MB/s links; smaller chunks cost throughput, since every
+# chunk pays a fresh request's start-up time.
 PROXY_CHUNK_BYTES = int(os.environ.get("PROXY_CHUNK_BYTES") or (4 * 1024 * 1024 if os.environ.get("VERCEL") else 0))
 
 @app.get("/proxy")
