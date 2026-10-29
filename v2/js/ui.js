@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════════
-   StreamTogether — shared UI motion layer
+   HexTV — shared UI motion layer
    Purely presentational: it never touches the page's own logic
    (Ably sync, chat, stream resolving). Safe to remove.
 ══════════════════════════════════════════════════════════════ */
