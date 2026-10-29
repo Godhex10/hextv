@@ -381,3 +381,15 @@ body.fs .toast { bottom: calc(var(--controls-h) + 0.8rem); z-index: 1000; }
 /* With the chat panel open in fullscreen, the bubble sits just left of it (and closes it) */
 body.fs.chat-open .mobile-chat-bubble { right: calc(min(340px, 88vw) + 12px); }
 body.fs .mobile-chat-bubble { transition: right 0.35s var(--ease), transform 0.25s var(--ease-spring); }
+
+/* ── Phones that won't rotate on request: turn the whole room 90° while held upright.
+   Rotating <body> carries everything with it — the fixed chat bubble, toasts and chat panel
+   are positioned inside the transformed body. Rotating the phone itself switches this off. ── */
+@media (orientation: portrait) {
+  body.fs.fs-rotate {
+    position: fixed; top: 0; left: 100vw; width: 100vh; height: 100vw;
+    width: 100dvh; height: 100dvw; left: 100dvw;
+    transform-origin: top left; transform: rotate(90deg); overflow: hidden;
+  }
+  body.fs.fs-rotate .main { position: absolute; inset: 0; }
+}

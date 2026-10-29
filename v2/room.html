@@ -467,7 +467,10 @@ const scrubTip = document.getElementById('scrubTip');
 let scrubbing = false;
 const scrubFraction = e => {
   const r = progressTrack.getBoundingClientRect();
-  return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+  // While the player is turned 90° by CSS (fs-rotate), the bar runs top-to-bottom on screen
+  const turned = document.body.classList.contains('fs-rotate') && window.matchMedia('(orientation: portrait)').matches;
+  const f = turned ? (e.clientY - r.top) / r.height : (e.clientX - r.left) / r.width;
+  return Math.min(1, Math.max(0, f));
 };
 function previewScrub(e) {
   const f = scrubFraction(e);
@@ -530,11 +533,22 @@ volSlider.addEventListener('input', () => {
    unread dot stay on screen, and phones turn sideways. Where real fullscreen isn't available
    (iPhone Safari only allows it for a bare <video>, which would hide our chat), the page
    fills the screen itself and the viewer rotates the phone. */
+const isPhone = () => window.matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 600;
+
 function setFullscreenLook(on) {
   document.body.classList.toggle('fs', on);
+  if (!on) document.body.classList.remove('fs-rotate');
   document.getElementById('fullscreenBtn').innerHTML = `<i class="fa-solid ${on ? 'fa-compress' : 'fa-expand'}"></i>`;
   if (!on) { try { screen.orientation.unlock(); } catch (e) { /* not supported */ } }
 }
+
+// Phones that refuse to rotate on request (many Android browsers, every iPhone) get the
+// player turned 90° by CSS instead. It only applies while the phone is held upright, so
+// physically rotating the phone hands over to its normal landscape view.
+function rotateOnPhones() {
+  if (isPhone()) document.body.classList.add('fs-rotate');
+}
+
 async function toggleFullscreen() {
   if (document.fullscreenElement) return document.exitFullscreen();
   if (document.body.classList.contains('fs')) return setFullscreenLook(false);   // the CSS-only kind
@@ -543,13 +557,16 @@ async function toggleFullscreen() {
     try {
       await root.requestFullscreen({ navigationUI: 'hide' });
       setFullscreenLook(true);
-      // Android turns the picture sideways; desktops and iPhones refuse, which is fine
-      try { await screen.orientation.lock('landscape'); } catch (e) { /* not supported */ }
+      try {
+        await screen.orientation.lock('landscape');
+      } catch (e) {
+        try { await screen.orientation.lock('landscape-primary'); } catch (e2) { rotateOnPhones(); }
+      }
       return;
     } catch (e) { /* fall through to the CSS-only kind */ }
   }
   setFullscreenLook(true);
-  if (window.matchMedia('(orientation: portrait)').matches) showToast('Turn your phone sideways for a bigger picture');
+  rotateOnPhones();
 }
 document.getElementById('fullscreenBtn').addEventListener('click', toggleFullscreen);
 document.addEventListener('fullscreenchange', () => setFullscreenLook(!!document.fullscreenElement));
