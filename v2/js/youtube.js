@@ -70,10 +70,13 @@
     let playWaiters = [];
     const fire = name => el.dispatchEvent(new Event(name));
 
-    function settlePlay(ok) {
+    // Rejections use the same names as <video>.play(): NotAllowedError when YouTube didn't start
+    // (autoplay rules), AbortError when the player was replaced or paused first
+    function settlePlay(ok, name) {
       const waiters = playWaiters;
       playWaiters = [];
-      waiters.forEach(w => (ok ? w.resolve() : w.reject(new Error('Playback was blocked'))));
+      waiters.forEach(w => (ok ? w.resolve()
+        : w.reject(Object.assign(new Error(name === 'AbortError' ? 'Playback was interrupted' : 'Playback was blocked'), { name: name || 'NotAllowedError' }))));
     }
 
     function onState(s) {
@@ -81,8 +84,9 @@
       state = s;
       if (s === PLAYING && intent === 'pause') {
         // Seeking a video that hasn't started makes YouTube start it. The room asked for it
-        // to wait (paused, or held until the room arrives), so put it back.
+        // to wait (paused, or held until the room arrives), so put it back — silently.
         seekingUntil = 0;
+        player.mute();
         player.pauseVideo();
         return;
       }
@@ -106,7 +110,7 @@
 
     function destroy() {
       clearInterval(timer);
-      settlePlay(false);
+      settlePlay(false, 'AbortError');
       if (player) { try { player.destroy(); } catch (e) { /* already gone */ } }
       player = null;
       ready = false;
@@ -188,13 +192,24 @@
             if (!player || !ready) return Promise.reject(new Error('YouTube is not ready'));
             if (state === PLAYING) return Promise.resolve();
             const p = new Promise((resolve, reject) => playWaiters.push({ resolve, reject }));
+            if (!muted) player.unMute();   // undo the silent re-pause, unless the viewer muted
             player.playVideo();
-            // Autoplay rules can stop YouTube silently; treat no start within 5s as blocked
-            setTimeout(() => { if (state !== PLAYING && playWaiters.length) { intent = 'pause'; settlePlay(false); fire('pause'); } }, 5000);
+            // Autoplay rules can stop YouTube silently: no start within 5s counts as blocked —
+            // unless it's still loading (slow connection), which just means waiting longer
+            const askedAt = performance.now();
+            const checkStarted = () => {
+              if (state === PLAYING || !playWaiters.length) return;
+              if (state === BUFFERING && performance.now() - askedAt < 30000) return setTimeout(checkStarted, 2000);
+              intent = 'pause';
+              settlePlay(false, 'NotAllowedError');
+              fire('pause');
+            };
+            setTimeout(checkStarted, 5000);
             return p;
           };
           case 'pause': return () => {
             intent = 'pause';
+            settlePlay(false, 'AbortError');   // like <video>: a pause interrupts a pending play
             if (player && ready) player.pauseVideo();
           };
           default: return undefined;

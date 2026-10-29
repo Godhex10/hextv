@@ -852,7 +852,9 @@ function userSeek(t) {
 
 function quietSeek(t) {
   if (Math.abs(video.currentTime - t) < 0.05) return;
-  if (seekStartedAt) seekCost = Math.min(10, seekCost * 1.5); // the last jump never became playable
+  // A new jump while the last one is still loading only means seeks are slow if that one has
+  // already taken longer than usual (back-to-back jumps used to inflate the lead to its cap)
+  if (seekStartedAt && (performance.now() - seekStartedAt) / 1000 > seekCost) seekCost = Math.min(10, seekCost * 1.5);
   seekStartedAt = performance.now();
   video.currentTime = t;
 }
@@ -874,7 +876,12 @@ function enginePlay() {
   holding = false;
   if (!video.paused) return;
   playRequestedAt = performance.now();
-  video.play().catch(() => { if (clock && clock.playing) showSyncPrompt(); });
+  video.play().catch(e => {
+    // Only a refusal needs the viewer's tap. A play interrupted by a version switch, a seek or
+    // a pause (AbortError) isn't one — the next tick simply asks again.
+    if (e && e.name === 'AbortError') return;
+    if (clock && clock.playing) showSyncPrompt();
+  });
 }
 video.addEventListener('playing', () => {
   if (!playRequestedAt) return;
@@ -919,7 +926,8 @@ function checkJump(exp) {
   if (!pendingJump || exp < pendingJump.target) return;
   const ok = video.readyState >= 3;
   pendingJump = null;
-  if (ok) return;
+  // A version that was just switched in is still loading; that isn't a failed jump
+  if (ok || performance.now() - sourceChangedAt < 20000) return;
   const now = performance.now();
   failedJumps.push(now);
   while (failedJumps.length && now - failedJumps[0] > 60000) failedJumps.shift();
@@ -941,8 +949,11 @@ function noteHardSync() {
   stepDown('This device is struggling to keep up — close other apps or tabs');
 }
 
-// Switch to the next lighter version, if there is one
+// Switch to the next lighter version, if there is one — at most once a minute, so a struggling
+// connection gets one calm change instead of a cascade of reloads
+let lastStepDownAt = -1e9;
 function stepDown(fallbackMessage) {
+  if (performance.now() - lastStepDownAt < 60000) return false;
   const height = s => s.quality_value || parseInt(s.quality, 10) || 0;
   const cur = mediaStreams[streamIndex];
   const lighter = cur && mediaStreams
@@ -950,6 +961,7 @@ function stepDown(fallbackMessage) {
     .filter(x => height(x.s) && height(x.s) < height(cur))
     .sort((a, b) => height(b.s) - height(a.s))[0];
   if (lighter) {
+    lastStepDownAt = performance.now();
     showToast(`Switched to ${lighter.s.quality} to keep up with the room`);
     playStream(lighter.i, true);
     return true;
