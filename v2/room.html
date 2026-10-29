@@ -526,12 +526,33 @@ volSlider.addEventListener('input', () => {
   muteBtn.innerHTML = video.volume == 0 ? '<i class="fa-solid fa-volume-xmark"></i>' : '<i class="fa-solid fa-volume-high"></i>';
 });
 
-document.getElementById('fullscreenBtn').addEventListener('click', () => {
-  const pw = document.querySelector('.video-col'); // keeps our controls bar in fullscreen
-  if (document.fullscreenElement) document.exitFullscreen?.();
-  else if (pw.requestFullscreen) pw.requestFullscreen();
-  else video.webkitEnterFullscreen?.(); // iPhone Safari only allows the video itself fullscreen
-});
+/* Fullscreen covers the whole room page (not just the video) so the chat bubble and its
+   unread dot stay on screen, and phones turn sideways. Where real fullscreen isn't available
+   (iPhone Safari only allows it for a bare <video>, which would hide our chat), the page
+   fills the screen itself and the viewer rotates the phone. */
+function setFullscreenLook(on) {
+  document.body.classList.toggle('fs', on);
+  document.getElementById('fullscreenBtn').innerHTML = `<i class="fa-solid ${on ? 'fa-compress' : 'fa-expand'}"></i>`;
+  if (!on) { try { screen.orientation.unlock(); } catch (e) { /* not supported */ } }
+}
+async function toggleFullscreen() {
+  if (document.fullscreenElement) return document.exitFullscreen();
+  if (document.body.classList.contains('fs')) return setFullscreenLook(false);   // the CSS-only kind
+  const root = document.documentElement;
+  if (root.requestFullscreen) {
+    try {
+      await root.requestFullscreen({ navigationUI: 'hide' });
+      setFullscreenLook(true);
+      // Android turns the picture sideways; desktops and iPhones refuse, which is fine
+      try { await screen.orientation.lock('landscape'); } catch (e) { /* not supported */ }
+      return;
+    } catch (e) { /* fall through to the CSS-only kind */ }
+  }
+  setFullscreenLook(true);
+  if (window.matchMedia('(orientation: portrait)').matches) showToast('Turn your phone sideways for a bigger picture');
+}
+document.getElementById('fullscreenBtn').addEventListener('click', toggleFullscreen);
+document.addEventListener('fullscreenchange', () => setFullscreenLook(!!document.fullscreenElement));
 
 /* ══════════════════════════════════════════════
     VIDEO SOURCE SETUP — handles MP4 + HLS
@@ -1312,9 +1333,16 @@ function renderMessage(payload, isOwn) {
   messagesList.scrollTop = messagesList.scrollHeight;
 }
 
+// Messages count as read only if the chat is actually on screen. On phones and in fullscreen
+// the chat is a panel opened from the bubble, so the Chat tab being selected isn't enough.
+function chatOnScreen() {
+  const tabActive = document.getElementById('chatTabButton')?.classList.contains('active');
+  const panelMode = document.body.classList.contains('fs') || window.matchMedia('(max-width: 700px)').matches;
+  return tabActive && (!panelMode || chatSidebar.classList.contains('mobile-open'));
+}
+
 function handleUnreadBadge() {
-  const isChatActive = document.getElementById('chatTabButton')?.classList.contains('active');
-  if (isChatActive) return;
+  if (chatOnScreen()) return;
   unreadCount++;
   const b1 = document.getElementById('tabNotificationBadge');
   const b2 = document.getElementById('chatNotificationBadge');
@@ -1435,11 +1463,13 @@ const chatBackdrop     = document.getElementById('chatBackdrop');
 
 function openMobileChat()  {
   chatSidebar.classList.add('mobile-open');
+  document.body.classList.add('chat-open');   // fullscreen moves the bubble clear of the panel
   if (chatBackdrop) chatBackdrop.classList.add('visible');
   clearUnreadBadge();
 }
 function closeMobileChat() {
   chatSidebar.classList.remove('mobile-open');
+  document.body.classList.remove('chat-open');
   if (chatBackdrop) chatBackdrop.classList.remove('visible');
 }
 
@@ -1544,11 +1574,6 @@ window.addEventListener('DOMContentLoaded', () => {
   v.addEventListener('volumechange', syncVol);
   vol.addEventListener('input', syncVol);
 
-  // Fullscreen icon
-  const fs = document.getElementById('fullscreenBtn');
-  document.addEventListener('fullscreenchange', () => {
-    fs.innerHTML = `<i class="fa-solid ${document.fullscreenElement ? 'fa-compress' : 'fa-expand'}"></i>`;
-  });
 
   // Auto-growing message box (the room script resets it to 38px after send)
   const msg = document.getElementById('msgInput');
