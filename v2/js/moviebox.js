@@ -64,6 +64,7 @@
       p.set('stream', media.url);
     }
     if (media.title) p.set('title', media.title);
+    if (media.t) p.set('t', Math.floor(media.t));   // "Continue Watching": start the new room here
     return 'room.html?' + p.toString();
   }
 

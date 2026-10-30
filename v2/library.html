@@ -39,6 +39,15 @@
     </form>
   </div>
 
+  <!-- Continue Watching: filled from this device's history (js/history.js); hidden when empty -->
+  <section class="shelf cw" id="continueWatching" hidden>
+    <div class="shelf-head">
+      <h3><i class="fa-solid fa-clock-rotate-left"></i>Continue Watching</h3>
+      <button class="shelf-more" id="cwClear">Clear history</button>
+    </div>
+    <div class="cw-track" id="cwTrack"></div>
+  </section>
+
   <div class="filters-bar">
     <div class="type-toggle" role="tablist" aria-label="Content type">
       <button class="genre-pill active" data-type="all">All</button>
@@ -75,6 +84,7 @@
 
 <script src="js/moviebox.js"></script>
 <script src="js/telemetry.js"></script>
+<script src="js/history.js"></script>
 <script>
 /* ══════════════════════════════════════════════
     STATE
@@ -206,6 +216,96 @@ view.addEventListener('keydown', e => {
   const card = e.target.closest('.movie-card');
   if (card && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openDetail(cardIndex.get(card.dataset.id)); }
 });
+
+/* ══════════════════════════════════════════════
+    CONTINUE WATCHING
+══════════════════════════════════════════════ */
+const cwBox = document.getElementById('continueWatching');
+const cwTrack = document.getElementById('cwTrack');
+
+function timeLeft(s) {
+  const m = Math.max(1, Math.round(s / 60));
+  return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m left` : `${m} min left`;
+}
+function watchedWhen(at) {
+  const days = Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(at).setHours(0, 0, 0, 0)) / 864e5);
+  return days <= 0 ? 'Watched today' : days === 1 ? 'Watched yesterday' : days < 7 ? `Watched ${days} days ago` : 'Watched ' + new Date(at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+}
+
+function renderContinue() {
+  const list = window.HexHistory ? HexHistory.list() : [];
+  cwBox.hidden = !list.length;
+  cwTrack.innerHTML = list.map(e => {
+    const series = e.type === 'series';
+    const sub = series ? `S${e.se} · E${e.ep} · ${e.done ? 'Finished' : timeLeft(e.d - e.t)}` : `${timeLeft(e.d - e.t)} · ${watchedWhen(e.at)}`;
+    const cover = escapeHTML(e.cover || FALLBACK_POSTER);
+    const pct = e.done ? 100 : Math.min(100, Math.round(e.t / e.d * 100));
+    return `
+      <div class="cw-card" tabindex="0" data-mb="${escapeHTML(e.mb)}">
+        <div class="cw-bg" style="background-image:url('${cover}')"></div>
+        <button class="cw-x" data-remove="${escapeHTML(e.mb)}" title="Remove from Continue Watching" aria-label="Remove ${escapeHTML(e.title)}"><i class="fa-solid fa-xmark"></i></button>
+        <div class="cw-in">
+          <img class="cw-poster" src="${cover}" alt="" loading="lazy" onerror="this.src='${FALLBACK_POSTER}'">
+          <div class="cw-txt">
+            <span class="cw-tag">${series ? 'Series' : 'Movie'}</span>
+            <span class="cw-title" title="${escapeHTML(e.title)}">${escapeHTML(e.title || 'Untitled')}</span>
+            <span class="cw-sub">${sub}</span>
+            <span class="cw-resume"><i class="fa-solid fa-play"></i> ${e.done ? 'Play next' : 'Resume'}</span>
+          </div>
+        </div>
+        <div class="cw-bar"><span style="width:${pct}%"></span></div>
+      </div>`;
+  }).join('');
+}
+
+const roomTitle = (title, se, ep) => se ? `${title} · S${se} E${ep}` : title;
+
+// Resume where this device stopped, or (a finished episode) start the next one
+async function resumeEntry(e, card) {
+  if (!e.done) {
+    window.location.href = MB.roomUrl({ mb: e.mb, se: e.se, ep: e.ep, title: roomTitle(e.title, e.se, e.ep), t: e.t > 10 ? e.t - 5 : 0 });
+    return;
+  }
+  card.classList.add('loading-streams');
+  try {
+    const seasons = ((await MB.get('/episodes/' + e.mb)).seasons || []).filter(s => s.episode_count > 0);
+    const cur = seasons.find(s => s.season === e.se);
+    const next = cur && e.ep < cur.episode_count ? { se: e.se, ep: e.ep + 1 }
+      : (s => s && { se: s.season, ep: 1 })(seasons.find(s => s.season > e.se));
+    if (next) {
+      window.location.href = MB.roomUrl({ mb: e.mb, se: next.se, ep: next.ep, title: roomTitle(e.title, next.se, next.ep) });
+      return;
+    }
+    // That was the last episode: the series leaves the row, and the details open to pick something
+    HexHistory.remove(e.mb);
+    renderContinue();
+    openDetail({ subject_id: e.mb, title: e.title, cover: e.cover, type: 'series' });
+  } catch {
+    openDetail({ subject_id: e.mb, title: e.title, cover: e.cover, type: 'series' });
+  } finally {
+    card.classList.remove('loading-streams');
+  }
+}
+
+cwTrack.addEventListener('click', e => {
+  const x = e.target.closest('[data-remove]');
+  if (x) { HexHistory.remove(x.dataset.remove); renderContinue(); return; }
+  const card = e.target.closest('.cw-card');
+  const entry = card && HexHistory.get(card.dataset.mb);
+  if (entry) resumeEntry(entry, card);
+});
+cwTrack.addEventListener('keydown', e => {
+  const card = e.target.closest('.cw-card');
+  if (card && e.target === card && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); card.click(); }
+});
+document.getElementById('cwClear').addEventListener('click', () => {
+  if (!confirm('Clear your watch history on this device?')) return;
+  HexHistory.clear();
+  renderContinue();
+});
+// Coming back from a room (including the browser's back button) shows the latest progress
+window.addEventListener('pageshow', renderContinue);
+renderContinue();
 
 /* ══════════════════════════════════════════════
     SEARCH

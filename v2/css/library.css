@@ -257,3 +257,38 @@ body { font-size: 14px; overflow-x: hidden; }
   .shelf-track { grid-auto-columns: 118px; gap: 0.65rem; }
   .detail-poster { width: 78px; }
 }
+
+/* ── Continue Watching (this device's history) ───── */
+.cw { margin: 0 0 1.6rem; }
+.cw .shelf-head h3 { display: flex; align-items: center; gap: 0.5rem; }
+.cw .shelf-head h3 i { color: var(--red-hot); font-size: 0.8rem; }
+.cw-track { display: grid; grid-auto-flow: column; grid-auto-columns: 280px; gap: 0.85rem; overflow-x: auto; padding: 4px 2px 10px;
+  scroll-snap-type: x mandatory; scrollbar-width: none; }
+.cw-track::-webkit-scrollbar { display: none; }
+.cw-card { position: relative; height: 158px; border-radius: 14px; overflow: hidden; cursor: pointer; scroll-snap-align: start;
+  border: 1px solid rgba(255, 255, 255, 0.08); background: var(--surface);
+  animation: cardIn 0.5s var(--ease) both; transition: transform 0.35s var(--ease), border-color 0.3s, opacity 0.2s; }
+.cw-card:hover, .cw-card:focus-visible { transform: translateY(-4px); border-color: rgba(229, 9, 20, 0.55); outline: none; }
+.cw-card.loading-streams { opacity: 0.6; pointer-events: none; }
+.cw-bg { position: absolute; inset: 0; background-size: cover; background-position: center 22%; transform: scale(1.04); transition: transform 0.6s var(--ease); }
+.cw-card:hover .cw-bg { transform: scale(1.1); }
+.cw-card::after { content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(90deg, rgba(5, 5, 7, 0.95) 0%, rgba(5, 5, 7, 0.75) 48%, rgba(5, 5, 7, 0.15) 100%), linear-gradient(0deg, rgba(5, 5, 7, 0.9), transparent 55%); }
+.cw-in { position: absolute; inset: 0; z-index: 1; display: flex; gap: 12px; padding: 12px 12px 16px; }
+.cw-poster { width: 76px; flex: none; aspect-ratio: 2 / 3; align-self: center; border-radius: 8px; object-fit: cover; box-shadow: 0 8px 20px -6px rgba(0, 0, 0, 0.8); }
+.cw-txt { display: flex; flex-direction: column; min-width: 0; padding: 4px 22px 0 0; }
+.cw-tag { font-size: 0.62rem; font-weight: 700; letter-spacing: 0.08em; color: var(--red-hot); text-transform: uppercase; }
+.cw-title { font-weight: 700; font-size: 0.92rem; line-height: 1.2; margin: 3px 0 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.cw-sub { font-size: 0.7rem; color: var(--muted); }
+.cw-resume { margin-top: auto; align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 6px 12px;
+  font-size: 0.7rem; font-weight: 700; color: #fff; background: var(--grad-red); box-shadow: 0 6px 16px -6px rgba(229, 9, 20, 0.9); transition: transform 0.25s var(--ease); }
+.cw-card:hover .cw-resume { transform: scale(1.05); }
+.cw-x { position: absolute; z-index: 2; top: 8px; right: 8px; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; cursor: pointer;
+  font-size: 0.65rem; color: #fff; background: rgba(0, 0, 0, 0.55); border: 1px solid rgba(255, 255, 255, 0.15); opacity: 0; transition: opacity 0.2s, background 0.2s; }
+.cw-card:hover .cw-x, .cw-card:focus-within .cw-x { opacity: 1; }
+.cw-x:hover { background: var(--red); }
+.cw-bar { position: absolute; z-index: 1; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(255, 255, 255, 0.12); }
+.cw-bar span { display: block; height: 100%; background: linear-gradient(90deg, #ff5a1f, #e50914); box-shadow: 0 0 8px rgba(229, 9, 20, 0.8); }
+/* Touch screens have no hover: the remove button is always there */
+@media (hover: none) { .cw-x { opacity: 1; } }
+@media (max-width: 640px) { .cw-track { grid-auto-columns: 250px; } .cw-card { height: 142px; } .cw-poster { width: 66px; } }

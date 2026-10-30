@@ -14,6 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
 <script src="js/moviebox.js"></script>
 <script src="js/telemetry.js"></script>
+<script src="js/history.js"></script>
 <script src="js/rooms.js"></script>
 <script src="js/youtube.js"></script>
 
@@ -267,6 +268,8 @@ const linkMedia = params.get('mb')
   ? { mb: params.get('mb'), se: Number(params.get('se')) || 0, ep: Number(params.get('ep')) || 0, title: directTitle || '' }
   : params.get('yt') ? { yt: params.get('yt'), title: directTitle || '' }
   : directStreamUrl ? { url: directStreamUrl, title: directTitle || '' } : null;
+// "Continue Watching" links say where to start (seconds); only used when we're first in the room
+const startAt = Math.max(0, Number(params.get('t')) || 0);
 
 let myName  = localStorage.getItem('st_username') || 'Guest_' + Math.floor(Math.random() * 900 + 100);
 let myColor = localStorage.getItem('st_color')    || randomColor();
@@ -1411,7 +1414,11 @@ function hideSyncPrompt() {
 function startAlone() {
   inSync = true;
   if (!linkMedia) return;
-  loadMedia(linkMedia).then(() => { if (!clock) userPlay(); }).catch(() => {});
+  loadMedia(linkMedia).then(() => {
+    if (clock) return;
+    if (startAt) setClock({ playing: false, time: startAt, at: serverNow() });
+    userPlay();
+  }).catch(() => {});
 }
 
 document.getElementById('syncBtn').addEventListener('click', () => {
@@ -1730,6 +1737,28 @@ setInterval(() => {
     stat.add('drift_n');
   }
 }, 1000);
+
+/* ══════════════════════════════════════════════
+    HISTORY — where this device stopped, for "Continue Watching" in the library (js/history.js)
+══════════════════════════════════════════════ */
+const historyInfo = {};   // mb -> { title, cover, type } from the title's details (null while loading)
+function saveHistory() {
+  const m = currentMedia;
+  if (!window.HexHistory || !m || !m.mb || !videoLoaded || waitingForTap || video.seeking) return;
+  if (!(m.mb in historyInfo)) {
+    historyInfo[m.mb] = null;
+    MB.get('/detail/' + encodeURIComponent(m.mb))
+      .then(d => { historyInfo[m.mb] = { title: d.title, cover: d.cover, type: d.subject_type === 2 ? 'series' : 'movie' }; })
+      .catch(() => {});
+  }
+  // Room titles read "Name · S1 E4"; history keeps the plain name
+  const title = (m.title || '').replace(/\s·\sS\d+\sE\d+$/, '');
+  HexHistory.save({ ...m, title, ...(historyInfo[m.mb] || {}) }, video.currentTime, video.duration);
+}
+setInterval(saveHistory, 5000);
+video.addEventListener('pause', saveHistory);
+video.addEventListener('ended', saveHistory);
+window.addEventListener('pagehide', saveHistory);
 
 /* ══════════════════════════════════════════════
     INIT
