@@ -189,7 +189,7 @@ export class Room extends DurableObject {
   async report(event, extra = {}) {
     if (!this.name) return;
     const ms = this.members();
-    const app = ms.filter(m => m._p === 'app').length;
+    const app = ms.filter(m => m._p && m._p !== 'web').length;   // Android and Windows apps
     const media = this.room && this.room.media;
     const body = {
       room: this.name, event, viewers: ms.length, web: ms.length - app, app,
@@ -210,7 +210,7 @@ export class Room extends DurableObject {
     const params = url.searchParams;
     const clientId = clean(params.get('clientId'), 64) || crypto.randomUUID();
     const vid = clean(params.get('vid'), 40);
-    const platform = params.get('platform') === 'app' ? 'app' : 'web';
+    const platform = ['app', 'windows'].includes(params.get('platform')) ? params.get('platform') : 'web';
 
     const [client, server] = Object.values(new WebSocketPair());
     const others = this.ctx.getWebSockets().filter(s => s.readyState === WebSocket.READY_STATE_OPEN);

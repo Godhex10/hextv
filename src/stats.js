@@ -172,11 +172,11 @@ export class Stats extends DurableObject {
     const now = Date.now();
     const day = dayOf(now);
     const vid = clamp(t.vid, 40);
-    const platform = t.platform === 'app' ? 'app' : 'web';
+    const platform = ['app', 'windows'].includes(t.platform) ? t.platform : 'web';
     this.add('beacons', 1);
     const c = t.c && typeof t.c === 'object' ? t.c : {};
     for (const [name, v] of Object.entries(c)) if (CLIENT_COUNTERS.has(name)) this.add(name, Math.min(num(v), 1e12));
-    if (platform === 'app') this.add('watch_s_app', num(c.watch_s));
+    if (platform !== 'web') this.add('watch_s_app', num(c.watch_s));
 
     if (vid) {
       const inserted = this.sql.exec('INSERT OR IGNORE INTO viewers (day, vid, platform) VALUES (?, ?, ?)', day, vid, platform).rowsWritten;
@@ -184,7 +184,7 @@ export class Stats extends DurableObject {
         this.sql.exec('INSERT OR IGNORE INTO first_seen (vid, day) VALUES (?, ?)', vid, day);
         // Audience breakdowns count each viewer once a day
         const dims = { country: clamp(t.country, 2) || 'XX', device: clamp(t.device, 12), os: clamp(t.os, 16),
-          browser: clamp(t.browser, 20), platform, app_version: platform === 'app' ? clamp(t.appVersion, 16) : '' };
+          browser: clamp(t.browser, 20), platform, app_version: platform !== 'web' ? (platform === 'windows' ? 'win ' : 'android ') + clamp(t.appVersion, 16) : '' };
         for (const [dim, val] of Object.entries(dims)) {
           if (!val) continue;
           this.sql.exec('INSERT INTO dims (day, dim, val, n) VALUES (?, ?, ?, 1) ON CONFLICT (day, dim, val) DO UPDATE SET n = n + 1', day, dim, val);
