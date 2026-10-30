@@ -24,9 +24,8 @@
 <body data-cursor="off">
 
 <div class="topbar">
-  <a class="logo-sm brand" href="index.html">
+  <a class="logo-sm brand" href="index.html" aria-label="HexTV" title="HexTV">
     <span class="brand-mark"></span>
-    <span class="logo-text-full brand-text">Hex<span>TV</span></span>
   </a>
   <div class="topbar-divider"></div>
   <div class="room-info">
@@ -118,6 +117,7 @@
       <!-- Over the YouTube player: taps go to the room, not straight to YouTube -->
       <div class="tap-layer" id="tapLayer" hidden></div>
       <div class="buffer-spin" id="bufferSpin" hidden aria-hidden="true"></div>
+      <button class="sound-btn" id="soundBtn" hidden><i class="fa-solid fa-volume-high"></i> Tap for sound</button>
       <div class="behind-note" id="behindNote" hidden role="status"></div>
       <div class="up-next" id="upNext" hidden role="dialog" aria-label="Next episode">
         <div class="up-next-card">
@@ -1940,8 +1940,26 @@ function dismissSyncOverlay() {
   hideSyncPrompt();
   inSync = true;
   if (!clock) return userPlay();
-  tick();   // the tap is the user gesture the browser wanted before playing with sound
+  // Phones only allow sound for a video started inside a tap. Joining a room that's already
+  // playing usually needs a moment to load and line up first, and a start after that moment
+  // can be refused or silent — so start it now, with sound; the sync engine then holds or
+  // moves it as needed, and the phone counts sound as allowed from here on.
+  if (!video.muted) video.play().catch(() => {});
+  tick();
 }
+
+// Safety net: YouTube muted itself (the phone wouldn't let it start with sound) — offer a tap
+const soundBtn = document.getElementById('soundBtn');
+setInterval(() => {
+  const silent = yt.active && !video.paused && video.silenced;
+  if (soundBtn.hidden === !silent) return;
+  soundBtn.hidden = !silent;
+  if (silent) stat.error('youtube', 'started without sound');
+}, 1000);
+soundBtn.addEventListener('click', () => {
+  video.muted = false;   // inside this tap the phone allows it
+  soundBtn.hidden = true;
+});
 document.getElementById('syncOverlay').addEventListener('keydown', e => {
   if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); dismissSyncOverlay(); }
 });

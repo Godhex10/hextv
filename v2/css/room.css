@@ -464,3 +464,10 @@ body.guest-noload .url-input-row { opacity: 0.4; pointer-events: none; }
 /* Guests who can't control it just see the countdown */
 body.guest-locked .up-next-cancel, body.guest-noload .up-next-play { display: none; }
 @media (max-width: 640px) { .up-next { padding: 12px; } .up-next-card { width: 100%; } }
+
+/* "Tap for sound": shown when a phone started YouTube silently */
+.sound-btn { position: absolute; z-index: 26; left: 50%; top: 50%; transform: translate(-50%, -50%); display: inline-flex; align-items: center; gap: 8px;
+  padding: 12px 20px; border-radius: 999px; border: none; cursor: pointer; font-family: inherit; font-size: 0.95rem; font-weight: 700; color: #fff;
+  background: var(--grad-red); box-shadow: 0 12px 30px -10px rgba(229, 9, 20, 0.9); animation: soundPulse 1.6s ease-in-out infinite; }
+.sound-btn[hidden] { display: none; }
+@keyframes soundPulse { 50% { transform: translate(-50%, -50%) scale(1.06); } }

@@ -194,6 +194,8 @@
           case 'playbackRate': return rate;
           case 'volume': return vol;
           case 'muted': return muted;
+          // YouTube mutes itself when a phone won't let it start with sound; the room offers a tap
+          case 'silenced': return !!(player && ready && !muted && player.isMuted && player.isMuted());
           case 'error': return lastError ? { code: 4, message: lastError } : null;
           case 'textTracks': return [];
           case 'currentSrc': return '';
@@ -265,7 +267,7 @@
     };
 
     const OVERRIDDEN = new Set(['currentTime', 'paused', 'play', 'pause', 'readyState', 'seeking', 'duration', 'buffered',
-      'playbackRate', 'volume', 'muted', 'error', 'getAttribute', 'textTracks', 'currentSrc']);
+      'playbackRate', 'volume', 'muted', 'silenced', 'error', 'getAttribute', 'textTracks', 'currentSrc']);
 
     controller.facade = new Proxy(el, {
       get(target, prop) {
