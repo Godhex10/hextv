@@ -161,6 +161,10 @@ export default {
 const mediaType = m => (!m ? '' : m.mb ? (m.se ? 'series' : 'movie') : m.yt ? 'youtube' : 'link');
 // Fields starting with "_" are private to the server (platform, anonymous viewer id)
 const publicMember = m => (m ? { clientId: m.clientId, data: m.data, timestamp: m.timestamp } : m);
+// A host is a device (its anonymous id), so a host who refreshes or reconnects stays host
+const deviceOf = m => m._v || 'c:' + m.clientId;
+// Who may send what while host controls are on: playback (play/pause/seek/up-next) and loading a video
+const PLAYBACK = new Set(['play', 'pause', 'seek', 'upnext', 'upnext_cancel']);
 
 export class Room extends DurableObject {
   constructor(ctx, env) {
@@ -169,8 +173,12 @@ export class Room extends DurableObject {
     this.rates = new Map();     // clientId -> { start, count }; fine to lose on eviction
     this.wsMsgs = 0;            // incoming messages since the last stats report
     this.settings = { at: 0, v: null };
+    // Host controls: owner = the host's device; lock = only the host controls playback;
+    // guestsLoad = guests may change the video. Off by default (everyone controls).
+    this.ctl = { owner: '', lock: false, guestsLoad: true };
     ctx.blockConcurrencyWhile(async () => {
       this.room = (await ctx.storage.get('room')) || null;
+      this.ctl = { ...this.ctl, ...((await ctx.storage.get('ctl')) || {}) };
       this.openedAt = (await ctx.storage.get('openedAt')) || null;
       this.name = (await ctx.storage.get('name')) || '';
     });
@@ -238,9 +246,11 @@ export class Room extends DurableObject {
       timestamp: Date.now(), _p: platform, _v: vid
     };
     server.serializeAttachment(member);
+    // A fresh (or emptied and reopened) room belongs to whoever opens it, with host controls off
+    if (!this.ctl.owner || created) { this.ctl = { owner: deviceOf(member), lock: false, guestsLoad: true }; await this.ctx.storage.put('ctl', this.ctl); }
     server.send(JSON.stringify({ t: 'welcome', clientId, serverTime: Date.now(), members: this.members().map(publicMember), room: this.room,
-      announcement: settings.announcement || '', announcementLevel: settings.announcementLevel || 'info' }));
-    this.broadcast({ t: 'presence', action: 'enter', member: publicMember(member), members: this.members().map(publicMember) }, server);
+      ctl: this.ctlState(), announcement: settings.announcement || '', announcementLevel: settings.announcementLevel || 'info' }));
+    this.broadcast({ t: 'presence', action: 'enter', member: publicMember(member), members: this.members().map(publicMember), ctl: this.ctlState() }, server);
     await this.ctx.storage.deleteAlarm();
     await this.report('enter', { created, inviteJoin: others.length > 0 });
     return new Response(null, { status: 101, webSocket: client });
@@ -291,11 +301,46 @@ export class Room extends DurableObject {
       me.data = { name: clean(data.name, 40) || me.data.name, color: clean(data.color, 20) || me.data.color };
       ws.serializeAttachment(me);
       this.broadcast({ t: 'presence', action: 'update', member: publicMember(me), members: this.members().map(publicMember) });
+    } else if (msg.t === 'ctl' && msg.data && typeof msg.data === 'object') {
+      await this.onControl(msg.data, me);
     } else if (msg.t === 'pub' && CHANNELS.has(msg.name) && msg.data && typeof msg.data === 'object') {
       if (msg.name === 'chat_message' && typeof msg.data.text === 'string') msg.data.text = msg.data.text.slice(0, MAX_CHAT_CHARS);
+      if (msg.name === 'video_sync' && !this.mayControl(msg.data.type, me.clientId)) return;   // the page already told them why
       if (msg.name === 'video_sync' && (await this.onSync(msg.data, me.clientId, ws, now))) return;
       this.broadcast({ t: 'msg', name: msg.name, data: msg.data, clientId: me.clientId, timestamp: now }, ws);
     }
+  }
+
+  // The host: the owner's device when it's here, otherwise whoever has been here longest
+  hostId(except) {
+    const ms = this.members(except);
+    if (!ms.length) return null;
+    const owner = ms.find(m => deviceOf(m) === this.ctl.owner);
+    return (owner || ms.reduce((a, b) => (b.timestamp < a.timestamp ? b : a))).clientId;
+  }
+
+  ctlState(except) {
+    return { host: this.hostId(except), lock: !!this.ctl.lock, guestsLoad: this.ctl.guestsLoad !== false };
+  }
+
+  mayControl(type, clientId) {
+    if (!this.ctl.lock && this.ctl.guestsLoad !== false) return true;
+    if (clientId === this.hostId()) return true;
+    if (type === 'load') return this.ctl.guestsLoad !== false;
+    return PLAYBACK.has(type) ? !this.ctl.lock : true;
+  }
+
+  // Only the host changes the controls or hands hosting to someone else
+  async onControl(data, me) {
+    if (me.clientId !== this.hostId()) return;
+    if (typeof data.lock === 'boolean') this.ctl.lock = data.lock;
+    if (typeof data.guestsLoad === 'boolean') this.ctl.guestsLoad = data.guestsLoad;
+    if (typeof data.makeHost === 'string') {
+      const target = this.members().find(m => m.clientId === data.makeHost);
+      if (target) this.ctl.owner = deviceOf(target);
+    }
+    await this.ctx.storage.put('ctl', this.ctl);
+    this.broadcast({ t: 'ctl', ctl: this.ctlState(), by: me.clientId });
   }
 
   // Track the room clock from sync messages. Returns true when the server answered itself.
@@ -349,7 +394,7 @@ export class Room extends DurableObject {
   async leave(ws) {
     const me = ws.deserializeAttachment();
     const others = this.ctx.getWebSockets().filter(s => s !== ws && s.readyState === WebSocket.READY_STATE_OPEN);
-    if (me) this.broadcast({ t: 'presence', action: 'leave', member: publicMember(me), members: this.members(ws).map(publicMember) }, ws);
+    if (me) this.broadcast({ t: 'presence', action: 'leave', member: publicMember(me), members: this.members(ws).map(publicMember), ctl: this.ctlState(ws) }, ws);
     if (!others.length) {
       await this.report('close', { viewers: 0 });
       this.openedAt = null;
@@ -363,6 +408,7 @@ export class Room extends DurableObject {
   async alarm() {
     if (!this.ctx.getWebSockets().length) {
       this.room = null;
+      this.ctl = { owner: '', lock: false, guestsLoad: true };
       const name = this.name;
       await this.ctx.storage.deleteAll();
       if (name) await this.ctx.storage.put('name', name);
