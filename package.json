@@ -1,7 +1,7 @@
 {
   "name": "hextv-desktop",
   "productName": "HexTV",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "HexTV for Windows — watch movies, series and YouTube together, in sync",
   "author": "godhex10",
   "main": "src/main.js",
