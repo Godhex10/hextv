@@ -810,6 +810,10 @@ async function loadSubtitles(media, q, token) {
 // Switch to one of the title's versions; with keep=true the position and play state carry over
 let sourceChangedAt = 0;   // a fresh source is still loading: falling behind then isn't the device's fault
 let qualityPickedAt = -1e9; // the viewer chose a quality themselves: don't override it for a while
+// The grace period runs from when the new version is actually loaded: on a slow relay just
+// opening it can take most of that time, and the first catch-up jumps then looked like a device
+// that can't keep up (it stepped down to 360p, whose reload put it even further behind)
+video.addEventListener('loadedmetadata', () => { sourceChangedAt = performance.now(); });
 
 function playStream(i, keep) {
   const resume = keep ? { time: video.currentTime, paused: video.paused } : null;
@@ -1024,7 +1028,8 @@ video.addEventListener('canplay', () => {
   if (!seekStartedAt) return;
   const took = (performance.now() - seekStartedAt) / 1000;
   seekStartedAt = 0;
-  seekCost = seekCost * 0.6 + Math.min(took, 10) * 0.4;
+  // A slow seek is believed at once (the next jump must aim far enough ahead); fast ones ease it down
+  seekCost = took > seekCost ? Math.min(took, 10) : seekCost * 0.6 + took * 0.4;
 });
 
 let playLag = 0.15;        // smoothed seconds from play() until the video actually moves, per device
@@ -1226,7 +1231,10 @@ function tick() {
         releaseTimer = setTimeout(() => { releaseTimer = null; if (holding) enginePlay(); }, (drift - playLag) * 1000);
       }
     } else if (drift < -1 && !document.hidden) {        // well behind: snap rather than race
-      hardSync(exp);
+      // A jump still loading is left to finish: jumping again would cancel its download, and on a
+      // slow link every jump would then be cancelled. The next jump uses how long this one took.
+      const jumpLoading = seekStartedAt && video.readyState < 3 && performance.now() - seekStartedAt < 15000;
+      if (!jumpLoading) hardSync(exp);
     } else {
       enginePlay();
       const off = Math.abs(drift);
