@@ -310,7 +310,18 @@ const inviteLink = () => {
   const base = (publicBase || location.origin) + location.pathname.replace(/[^/]*$/, '').replace(/\/app\/$/, '/');
   return base + 'r/' + encodeURIComponent(roomId) + (q.toString() ? '?' + q : '');
 };
-const showInviteLink = () => { document.getElementById('shareUrl').textContent = inviteLink(); };
+const showInviteLink = () => { document.getElementById('shareUrl').textContent = inviteLink(); warmInviteCard(); };
+// The poster card chat apps show for an invite takes a few seconds to make the first time;
+// asking for it now means it's ready by the time someone pastes the link
+let warmedCard = '';
+function warmInviteCard() {
+  const q = new URLSearchParams(location.search), mb = q.get('mb');
+  if (MB.API !== location.origin || !/^\d+$/.test(mb || '')) return;
+  const url = `${MB.API}/og/${mb}.jpg` + (Number(q.get('se')) ? `?se=${q.get('se')}&ep=${q.get('ep')}` : '');
+  if (url === warmedCard) return;
+  warmedCard = url;
+  fetch(url).catch(() => {});
+}
 if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
   MB.get('/public-url').then(d => { publicBase = d.url; showInviteLink(); }).catch(() => {});
 }
