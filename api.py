@@ -11,12 +11,12 @@ import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 import httpx
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
@@ -1454,6 +1454,187 @@ def public_url():
             break
     _public_url_cache.update(at=time.time(), url=found)
     return {"url": found}
+
+# ── Invite links ───────────────────────────────────────────────────────────────
+# /r/<room>?mb=…&se=…&ep=… is the link people share. Chat apps (WhatsApp, Instagram, X…) fetch it
+# and get a page of preview tags (poster card + "Join my watch party: …"); people are sent on
+# to the room page itself.
+ROOM_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+PREVIEW_BOTS = re.compile(r"facebookexternalhit|facebot|whatsapp|twitterbot|telegrambot|slackbot|discordbot|linkedinbot|"
+                          r"skypeuripreview|snapchat|pinterest|redditbot|embedly|vkshare|applebot|googlebot|bingbot|bot\b|crawler|preview", re.I)
+ROOM_PARAMS = ("mb", "se", "ep", "yt", "stream", "title")
+
+
+def _room_page() -> str:
+    # On Vercel the site is at the root; the local API serves it under /app
+    return "/room.html" if os.environ.get("VERCEL") else "/app/room.html"
+
+
+def _invite_title(mb: str, se: int, ep: int, fallback: str) -> tuple:
+    """(title for the card, poster url) — the title's name without "[English]"-style tags."""
+    title, cover = fallback, None
+    if mb:
+        try:
+            d = engine.get_details(mb)
+            title, cover = d.get("title") or title, d.get("cover")
+        except Exception:
+            pass
+    title = re.sub(r"\s*\[[^\]]*\]", "", title or "").strip()
+    return title, cover
+
+
+@app.get("/r/{room}")
+def invite_link(room: str, request: Request):
+    if not ROOM_ID_RE.match(room):
+        raise HTTPException(status_code=404, detail="No such room")
+    q = {k: request.query_params.get(k) for k in ROOM_PARAMS if request.query_params.get(k)}
+    target = _room_page() + "?" + urlencode({"room": room, **q})
+    if not PREVIEW_BOTS.search(request.headers.get("user-agent", "")):
+        return RedirectResponse(target, status_code=302)
+
+    base = str(request.base_url).rstrip("/")
+    mb = q.get("mb", "") if re.fullmatch(r"\d{1,24}", q.get("mb", "")) else ""
+    se, ep = _int(q.get("se")), _int(q.get("ep"))
+    title, cover = _invite_title(mb, se, ep, re.sub(r"\s·\sS\d+\sE\d+$", "", q.get("title", "")))
+    episode = f" · S{se} E{ep}" if se else ""
+    if mb:
+        image = f"{base}/og/{mb}.jpg" + (f"?se={se}&ep={ep}" if se else "")
+    elif q.get("yt") and re.fullmatch(r"[A-Za-z0-9_-]{6,20}", q["yt"]):
+        image = f"https://i.ytimg.com/vi/{q['yt']}/hqdefault.jpg"
+    else:
+        image = f"{base}/img/hextv-icon-512.png"
+    heading = f"Join my watch party: {title}{episode}" if title else "Join my watch party on HexTV"
+    esc = lambda s: (s or "").replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;")
+    page = f"""<!doctype html><html><head><meta charset="utf-8"><title>{esc(heading)}</title>
+<meta property="og:type" content="website"><meta property="og:site_name" content="HexTV">
+<meta property="og:title" content="{esc(heading)}">
+<meta property="og:description" content="Watch together, perfectly in sync — no sign-up needed.">
+<meta property="og:image" content="{esc(image)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+<meta property="og:url" content="{esc(str(request.url))}"><meta name="twitter:card" content="summary_large_image">
+<meta http-equiv="refresh" content="0;url={esc(target)}"></head><body><a href="{esc(target)}">Join the watch party</a></body></html>"""
+    return HTMLResponse(page, headers={"Cache-Control": "public, max-age=300"})
+
+
+def _int(v) -> int:
+    try:
+        return max(0, min(999, int(v)))
+    except (TypeError, ValueError):
+        return 0
+
+
+_og_cache: Dict[str, bytes] = {}
+
+
+@app.get("/og/{mb}.jpg")
+def invite_image(mb: str, se: int = 0, ep: int = 0):
+    """The 1200×630 card chat apps show for an invite: poster, title, episode, "Join" button."""
+    if not re.fullmatch(r"\d{1,24}", mb):
+        raise HTTPException(status_code=404, detail="Unknown title")
+    key = f"{mb}:{se}:{ep}"
+    if key not in _og_cache:
+        title, cover = _invite_title(mb, se, ep, "")
+        poster = None
+        if cover:
+            try:
+                poster = httpx.get(cover, timeout=10, follow_redirects=True).content
+            except Exception:
+                pass
+        _og_cache[key] = _draw_invite_card(title or "Movie night", f"Season {se} · Episode {ep}" if se else "", poster)
+        while len(_og_cache) > 64:
+            _og_cache.pop(next(iter(_og_cache)))
+    return Response(_og_cache[key], media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400, s-maxage=604800"})
+
+
+def _draw_invite_card(title: str, episode: str, poster_bytes: Optional[bytes]) -> bytes:
+    from io import BytesIO
+    from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
+
+    W, H = 1200, 630
+    RED, HOT, MUTED = (229, 9, 20), (255, 45, 58), (196, 196, 207)
+    font = lambda size: ImageFont.load_default(size)   # Pillow's built-in Aileron
+    card = Image.new("RGB", (W, H), (5, 5, 7))
+    poster = None
+    if poster_bytes:
+        try:
+            poster = Image.open(BytesIO(poster_bytes)).convert("RGB")
+        except Exception:
+            poster = None
+    if poster:
+        # Blurred, darkened poster behind everything
+        bg = ImageOps.fit(poster, (W, H)).filter(ImageFilter.GaussianBlur(28))
+        card = Image.blend(card, bg, 0.45)
+    # Dark on the left (for the text), fading to the right
+    shade = Image.new("L", (W, 1))
+    shade.putdata([int(245 - 150 * (x / W) ** 1.4) for x in range(W)])
+    card = Image.composite(Image.new("RGB", (W, H), (5, 5, 7)), card, shade.resize((W, H)))
+    d = ImageDraw.Draw(card)
+
+    if poster:
+        pw, ph = 347, 520
+        p = ImageOps.fit(poster, (pw, ph))
+        mask = Image.new("L", (pw, ph), 0)
+        ImageDraw.Draw(mask).rounded_rectangle((0, 0, pw - 1, ph - 1), 22, fill=255)
+        layer = Image.new("RGBA", (pw + 80, ph + 80), (0, 0, 0, 0))
+        shadow = Image.new("L", (pw + 80, ph + 80), 0)
+        ImageDraw.Draw(shadow).rounded_rectangle((40, 60, pw + 40, ph + 60), 22, fill=190)
+        layer.putalpha(shadow.filter(ImageFilter.GaussianBlur(24)))
+        p_rgba = p.convert("RGBA")
+        p_rgba.putalpha(mask)
+        layer.alpha_composite(p_rgba, (40, 40))
+        layer = layer.rotate(-3, resample=Image.BICUBIC, expand=True)
+        card.paste(layer, (W - pw - 120, 15), layer)
+
+    # The bold H and the HEXTV wordmark
+    x0, y0, s = 80, 70, 44 / 80
+    def box(x1, y1, x2, y2):
+        d.rounded_rectangle((x0 + (x1 - 10) * s, y0 + (y1 - 10) * s, x0 + (x2 - 10) * s, y0 + (y2 - 10) * s), 3, fill=RED)
+    box(12, 12, 40, 88); box(60, 12, 88, 88); box(38, 40, 62, 60)
+    wf = font(40)
+    d.text((x0 + 58, y0 + 2), "HEX", font=wf, fill=RED, stroke_width=1, stroke_fill=RED)
+    d.text((x0 + 58 + d.textlength("HEX", font=wf) + 1, y0 + 2), "TV", font=wf, fill=(255, 255, 255), stroke_width=1, stroke_fill=(255, 255, 255))
+
+    # Kicker
+    ky = 200
+    d.ellipse((80, ky + 6, 96, ky + 22), fill=HOT)
+    d.text((110, ky), "WATCH PARTY  ·  LIVE NOW", font=font(24), fill=HOT, stroke_width=1, stroke_fill=HOT)
+
+    # Title: as large as fits in two lines
+    title = title.upper()
+    max_w = 640 if poster else 1040
+    for size in (92, 80, 68, 58, 50, 44):
+        tf = font(size)
+        words, lines, cur = title.split(), [], ""
+        for w in words:
+            trial = (cur + " " + w).strip()
+            if d.textlength(trial, font=tf) <= max_w or not cur:
+                cur = trial
+            else:
+                lines.append(cur)
+                cur = w
+        lines.append(cur)
+        if len(lines) <= 2 and all(d.textlength(l, font=tf) <= max_w for l in lines):
+            break
+    lines = lines[:2]
+    ty = 250
+    for line in lines:
+        d.text((78, ty), line, font=tf, fill=(255, 255, 255), stroke_width=2, stroke_fill=(255, 255, 255))
+        ty += int(size * 1.08)
+    if episode:
+        d.text((80, ty + 8), episode, font=font(30), fill=MUTED)
+
+    # "Join the watch party" button
+    bf = font(26)
+    label = "Join the watch party"
+    bw = int(d.textlength(label, font=bf)) + 100
+    bx, by = 80, H - 70 - 66
+    d.rounded_rectangle((bx, by, bx + bw, by + 66), 33, fill=RED)
+    d.polygon([(bx + 32, by + 21), (bx + 32, by + 45), (bx + 52, by + 33)], fill=(255, 255, 255))
+    d.text((bx + 66, by + 18), label, font=bf, fill=(255, 255, 255), stroke_width=1, stroke_fill=(255, 255, 255))
+
+    out = BytesIO()
+    card.save(out, "JPEG", quality=86, optimize=True, progressive=True)
+    return out.getvalue()
+
 
 # Serve the watch-party site from this server too, so one public URL (e.g. a tunnel) covers both
 SITE_DIR = os.environ.get("SITE_DIR") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "streaming platform", "v2")
