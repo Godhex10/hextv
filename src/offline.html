@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>HexTV — offline</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #050507; color: #f6f6f8; font-family: "Segoe UI", system-ui, sans-serif; }
+  body { display: grid; place-items: center; text-align: center; padding: 24px; box-sizing: border-box; }
+  .mark { width: 64px; height: 64px; border-radius: 18px; margin: 0 auto 20px; display: grid; place-items: center; opacity: .55;
+    background: linear-gradient(135deg, #ff2d3a 0%, #e50914 45%, #b20710 100%); }
+  .mark::after { content: ""; border-left: 22px solid #fff; border-top: 14px solid transparent; border-bottom: 14px solid transparent; margin-left: 6px; }
+  h1 { font-size: 22px; margin: 0 0 8px; }
+  p { color: #9a9aa8; font-size: 14px; margin: 0 0 22px; }
+  button { background: linear-gradient(135deg, #ff2d3a, #e50914 45%, #b20710); color: #fff; border: 0; border-radius: 10px; padding: 11px 22px;
+    font: 600 14px "Segoe UI", sans-serif; cursor: pointer; box-shadow: 0 8px 24px -8px rgba(229,9,20,.8); }
+  button:hover { filter: brightness(1.1); }
+</style>
+</head>
+<body>
+  <div>
+    <div class="mark"></div>
+    <h1>Can't reach HexTV</h1>
+    <p>Check your internet connection, then try again.</p>
+    <button id="retry">Try again</button>
+  </div>
+  <script>
+    // Retry the page that failed (only HexTV addresses), or the library
+    const SITE = 'https://streamtogether-pi.vercel.app/';
+    const u = new URLSearchParams(location.search).get('u') || '';
+    const target = u.startsWith(SITE) ? u : SITE + 'library.html';
+    document.getElementById('retry').onclick = () => { location.href = target; };
+    window.addEventListener('online', () => { location.href = target; });
+  </script>
+</body>
+</html>

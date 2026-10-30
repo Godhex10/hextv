@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+<title>HexTV</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #050507; overflow: hidden; }
+  body { display: grid; place-items: center; font-family: "Segoe UI", system-ui, sans-serif; }
+  .glow { position: fixed; width: 900px; height: 900px; left: 50%; top: 50%; margin: -450px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(229,9,20,.22), transparent 60%); animation: breathe 2.4s ease-in-out infinite; }
+  .mark { position: relative; width: 96px; height: 96px; border-radius: 26px; display: grid; place-items: center;
+    background: linear-gradient(135deg, #ff2d3a 0%, #e50914 45%, #b20710 100%); box-shadow: 0 20px 60px -15px rgba(229,9,20,.9);
+    animation: beat 1.2s ease-in-out infinite; }
+  .mark::after { content: ""; border-left: 34px solid #fff; border-top: 21px solid transparent; border-bottom: 21px solid transparent; margin-left: 9px; }
+  .name { position: relative; margin-top: 22px; text-align: center; font-weight: 800; font-size: 26px; letter-spacing: .14em; color: #e50914; }
+  .name span { color: #fff; }
+  @keyframes beat { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.07); } }
+  @keyframes breathe { 0%, 100% { opacity: .7; } 50% { opacity: 1; } }
+</style>
+</head>
+<body>
+  <div class="glow"></div>
+  <div><div class="mark"></div><div class="name">HEX<span>TV</span></div></div>
+</body>
+</html>
