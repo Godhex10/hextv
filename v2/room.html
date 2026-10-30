@@ -720,6 +720,7 @@ const sameMedia = (a, b) => !!a && !!b &&
 function loadMedia(media) {
   if (mediaReady && sameMedia(media, currentMedia)) return mediaReady;
   currentMedia = media;
+  struggleTold = new Set();
   const token = ++mediaToken;
   document.getElementById('pasteHint')?.remove();
   if (media.title) document.getElementById('roomNameDisplay').textContent = media.title;
@@ -990,6 +991,7 @@ function broadcastSync(payload) {
 
 function setClock(c) {
   clock = c;
+  clockChangedAt = performance.now();
   inSync = true;
   updatePlayIcon();
   tick();
@@ -1036,7 +1038,8 @@ let playLag = 0.15;        // smoothed seconds from play() until the video actua
 let playRequestedAt = 0;
 let catchUp = null;        // { since } while closing a small gap by speed
 let releaseTimer = null;   // precise end of a hold
-const hardSyncs = [];      // times of recent snaps, to notice a device that can't keep up
+const hardSyncs = [];      // recent snaps { at, starved }, to notice a viewer who can't keep up
+let clockChangedAt = -1e9; // last play / pause / jump / load by anyone: snaps right after it are expected
 
 // YouTube: act on a gap only once it's clearly real (above the threshold for 1.5s) and not
 // right after the last correction, so a jittery position can't trigger a stream of nudges.
@@ -1092,6 +1095,9 @@ const failedJumps = [];
 
 // Snap to the room: instantly if that part is loaded, otherwise jump ahead and let the room arrive
 function hardSync(exp) {
+  // Measured before jumping: was the video stuck loading (now or moments ago), or was it playing
+  // with video to spare and still fell behind? The first means a slow connection, the second a busy device.
+  const starved = video.readyState < 3 || performance.now() - lastWaitAt < 8000;
   setRate(1);
   catchUp = null;
   noteCorrection();
@@ -1105,7 +1111,7 @@ function hardSync(exp) {
     pendingJump = { target: exp + lead() };
     quietSeek(pendingJump.target);
   }
-  noteHardSync();
+  noteHardSync(starved);
 }
 
 // Called when the room reaches the spot we jumped to: did the video load in time?
@@ -1120,70 +1126,89 @@ function checkJump(exp) {
   while (failedJumps.length && now - failedJumps[0] > 60000) failedJumps.shift();
   if (failedJumps.length < 2) return;
   failedJumps.length = 0;
-  if (stepDown()) return;
-  stat.add('slow_mode_n');
-  slowUntil = now + 60000;   // the "behind" label on the video explains it to the viewer
+  if (stepDown('network')) return;
+  playBehind('network');
 }
 
-// Several snaps in a short time means this device can't keep up (slow decoder or network):
-// step down to a lighter version once, or suggest it
-function noteHardSync() {
+// Several snaps in a short time means this viewer can't keep up. Snaps just after anyone played,
+// paused, jumped or loaded something are expected and don't count. The cause decides the fix
+// and the message: a slow connection is never told to close tabs, and a busy device is never
+// told its internet is slow.
+function noteHardSync(starved) {
   const now = performance.now();
-  if (now - sourceChangedAt < 20000 || now - qualityPickedAt < 120000) return;
-  hardSyncs.push(now);
-  while (hardSyncs.length && now - hardSyncs[0] > 45000) hardSyncs.shift();
+  if (now - sourceChangedAt < 20000 || now - clockChangedAt < 10000 || now - qualityPickedAt < 120000) return;
+  hardSyncs.push({ at: now, starved });
+  while (hardSyncs.length && now - hardSyncs[0].at > 45000) hardSyncs.shift();
   if (hardSyncs.length < 3) return;
+  const network = hardSyncs.filter(h => h.starved).length * 2 >= hardSyncs.length;
   hardSyncs.length = 0;
-  stepDown('This device is struggling to keep up — close other apps or tabs');
+  const cause = network ? 'network' : 'device';
+  if (!stepDown(cause)) playBehind(cause);
+}
+
+// Nothing lighter to switch to (or just switched): stop jumping for a minute and play a few
+// seconds behind the room — watching late beats a video that keeps stopping. Tapping Sync tries again.
+function playBehind(cause) {
+  if (performance.now() < slowUntil) return;
+  stat.add('slow_mode_n');
+  slowUntil = performance.now() + 60000;
+  tellStruggle(cause, null);
+}
+
+// One message per cause per video, worded for what's actually wrong; each one is logged
+// (with the platform) for the dashboard
+const STRUGGLE_TEXT = {
+  network: q => yt.active ? 'Slow internet connection — YouTube is loading slowly, so you may be a few seconds behind the room'
+    : q ? `Slow internet connection — switched to ${q} to keep the video playing`
+    : "Slow internet connection — playing a few seconds behind the room so the video doesn't keep stopping",
+  device: q => q ? `This device is too busy to play smoothly — switched to ${q}. Closing other apps or browser tabs will help`
+    : 'This device is too busy to play smoothly — close other apps or browser tabs to get back in sync'
+};
+let struggleTold = new Set();   // causes already shown for the current video
+function tellStruggle(cause, quality) {
+  stat.error('struggle', `${cause === 'network' ? 'slow connection' : 'busy device'} · ${quality ? 'switched to ' + quality : 'playing behind'}${yt.active ? ' · YouTube' : ''}`);
+  if (struggleTold.has(cause)) return;
+  struggleTold.add(cause);
+  showToast(STRUGGLE_TEXT[cause](quality));
 }
 
 // Switch to the next lighter version, if there is one — at most once a minute, so a struggling
 // connection gets one calm change instead of a cascade of reloads
 let lastStepDownAt = -1e9;
-function stepDown(fallbackMessage) {
-  if (performance.now() - lastStepDownAt < 60000) return false;
+function stepDown(cause) {
+  if (yt.active || performance.now() - lastStepDownAt < 60000) return false;
   const height = s => s.quality_value || parseInt(s.quality, 10) || 0;
   const cur = mediaStreams[streamIndex];
   const lighter = cur && mediaStreams
     .map((s, i) => ({ s, i }))
     .filter(x => height(x.s) && height(x.s) < height(cur))
     .sort((a, b) => height(b.s) - height(a.s))[0];
-  if (lighter) {
-    lastStepDownAt = performance.now();
-    stat.add('step_downs');
-    showToast(`Switched to ${lighter.s.quality} to keep up with the room`);
-    playStream(lighter.i, true);
-    return true;
-  }
-  if (fallbackMessage) showToast(fallbackMessage);
-  return false;
+  if (!lighter) return false;
+  lastStepDownAt = performance.now();
+  stat.add('step_downs');
+  tellStruggle(cause, lighter.s.quality);
+  playStream(lighter.i, true);
+  return true;
 }
 
-// Slow-connection check: if video downloads slower than it plays and the buffer is running
-// low, step down before the viewer hits buffering (never over a quality they picked themselves)
-const BW_WINDOW_MS = 15000;
-let bwSample = null;       // { at, end } buffered end at the start of the window
-let lastPace = null;       // last measured seconds-of-video downloaded per second
-function bufferedEnd() {
-  const b = video.buffered, t = video.currentTime;
-  for (let i = 0; i < b.length; i++) if (b.start(i) <= t + 0.5 && b.end(i) >= t) return b.end(i);
-  return t;
-}
-setInterval(() => {
+// Slow-connection check: the video ran out of downloaded video while playing — not during a
+// jump, a new version or right after a play/pause/jump in the room. That is the one sure sign of
+// a slow connection. (How far ahead the browser has buffered is no guide: with MovieBox files it
+// stays a few seconds ahead even on a fast connection, which used to cause needless 360p drops.)
+let lastWaitAt = -1e9;     // last time playback stopped to load (any reason but a jump)
+const stalls = [];         // recent slow-connection stalls
+video.addEventListener('waiting', () => {
+  if (video.seeking) return;
   const now = performance.now();
-  const watching = currentMedia && currentMedia.mb && clock && clock.playing && !waitingForTap && video.readyState >= 1;
-  if (!watching || now - sourceChangedAt < 10000 || now - qualityPickedAt < 120000) { bwSample = null; return; }
-  const end = bufferedEnd();
-  if (!bwSample) { bwSample = { at: now, end }; return; }
-  if (now - bwSample.at < BW_WINDOW_MS) return;
-  // Seconds of video downloaded per second; playing needs at least 1
-  const pace = (end - bwSample.end) / ((now - bwSample.at) / 1000);
-  const ahead = end - video.currentTime;
-  bwSample = { at: now, end };
-  lastPace = pace;
-  if (pace < 1 && ahead < 12) stepDown();
-}, 5000);
-video.addEventListener('seeking', () => { bwSample = null; }); // a jump isn't download progress
+  lastWaitAt = now;
+  if (yt.active || !hasPlayedOnce || !clock || !clock.playing || waitingForTap || seekStartedAt) return;
+  if (now - sourceChangedAt < 10000 || now - clockChangedAt < 5000 || now - qualityPickedAt < 120000) return;
+  stalls.push(now);
+  while (stalls.length && now - stalls[0] > 60000) stalls.shift();
+  if (stalls.length < 2) return;
+  stalls.length = 0;
+  stepDown('network');
+});
 
 function enginePause(hold) {
   holding = hold;
@@ -1197,8 +1222,8 @@ function tick() {
     const exp = expectedPos();
     const drift = video.currentTime - exp;            // > 0: ahead of the room
     if (clock.playing) checkJump(exp);
-    // When the slow spell ends, only chase again if downloads now outpace playback
-    if (slowUntil && performance.now() >= slowUntil && lastPace !== null && lastPace < 1.05) slowUntil = performance.now() + 30000;
+    // When the slow spell ends, only chase again if the video hasn't stopped to load lately
+    if (slowUntil && performance.now() >= slowUntil && performance.now() - lastWaitAt < 30000) slowUntil = performance.now() + 30000;
     const chasing = performance.now() >= slowUntil;
     // Past the end the room clock keeps counting, but there's nothing left to catch up to
     const atEnd = clock.playing && isFinite(video.duration) && video.duration > 0 && exp >= video.duration - 0.3;

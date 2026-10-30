@@ -1153,7 +1153,7 @@ body.still .tbl tbody tr, body.still .alert-row, body.still .split span { transi
 
     const E = Q.errors, errTotal = Object.values(E).reduce((a, b) => a + b, 0);
     $('errSub').textContent = errTotal ? `${fmtN(errTotal)} in this range` : 'none in this range';
-    const names = { lookup: 'Title lookups', relay: 'Video relay', youtube: 'YouTube', room: 'Room server', subs: 'Subtitles' };
+    const names = { lookup: 'Title lookups', relay: 'Video relay', youtube: 'YouTube', room: 'Room server', subs: 'Subtitles', struggle: "Couldn't keep up" };
     barList($('errBars'), errTotal ? Object.entries(E).map(([k, v]) => ({ label: names[k], v })).sort((a, b) => b.v - a.v) : [], { color: C.s1, empty: 'No errors' });
     table($('errTbl'), [
       { h: 'When', f: e => `<span title="${esc(new Date(e.at).toLocaleString())}">${ago(e.at)}</span>` },
