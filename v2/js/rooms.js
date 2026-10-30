@@ -64,6 +64,13 @@
     });
   };
 
+  // Leave the room for good (another tab on this device took over)
+  RoomSocket.prototype.close = function () {
+    this._closed = true;
+    clearInterval(this._ping);
+    try { this._ws.close(1000, 'bye'); } catch (e) { /* already closed */ }
+  };
+
   RoomSocket.prototype._emit = function (evt, arg) {
     (this._handlers[evt] || []).forEach(cb => { try { cb(arg); } catch (e) { console.error(e); } });
   };

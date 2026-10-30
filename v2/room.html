@@ -78,6 +78,7 @@
         <div class="media-spinner" id="mediaSpinner" aria-hidden="true"></div>
         <p id="mediaStatusText">Finding the best stream…</p>
         <button class="btn-retry" id="mediaRetry" hidden><i class="fa-solid fa-rotate-right"></i> Try again</button>
+        <button class="btn-retry" id="mediaHere" hidden><i class="fa-solid fa-arrow-right-to-bracket"></i> Watch here instead</button>
       </div>
 
       <!-- Per-viewer quality and subtitle choices (not shared with the room) -->
@@ -385,6 +386,7 @@ function initAbly() {
 
     // The room server ended this room for us (closed by HexTV, removed, or paused for maintenance)
     ablyClient.connection.on('closed', info => {
+      if (info.reason === 'elsewhere') return leaveForOtherTab(info.message);
       isChannelReady = false;
       enginePause(false);
       showMediaStatus(info.message || 'This room was closed.', true);
@@ -433,6 +435,49 @@ function initAbly() {
 }
 
 let joinedOnce = false;
+
+/* One room at a time on each device: a room opened in another tab (or this room opened again)
+   takes over, and this tab steps out. Tabs tell each other through a BroadcastChannel; the room
+   server also drops an older connection of the same device to the same room. */
+const openedAt = Date.now();
+let leftForOtherTab = false;
+try {
+  const tabs = new BroadcastChannel('hextv-room');
+  tabs.postMessage({ type: 'open', tab: myClientId, room: roomId, at: openedAt });
+  tabs.onmessage = e => {
+    const m = e.data || {};
+    // The newest tab wins (ties broken by id, so two tabs opened together don't both leave)
+    if (m.type !== 'open' || m.tab === myClientId || m.at < openedAt || (m.at === openedAt && m.tab < myClientId)) return;
+    leaveForOtherTab(m.room === roomId
+      ? 'This room is now open in another tab on this device. HexTV plays one room at a time on each device.'
+      : 'You opened another room in another tab. HexTV plays one room at a time on each device, so this one was closed.');
+  };
+} catch (e) { /* no BroadcastChannel: the room server still keeps one connection per device and room */ }
+
+function leaveForOtherTab(message) {
+  if (leftForOtherTab) return;
+  leftForOtherTab = true;
+  isChannelReady = false;
+  saveHistory();
+  try { ablyClient && ablyClient.close(); } catch (e) { /* already closed */ }
+  // Stop everything here: no clock to follow, no lookups finishing later, no video downloading
+  clock = null;
+  mediaToken++;
+  enginePause(false);
+  if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
+  yt.deactivate();
+  videoEl.removeAttribute('src');
+  videoEl.load();
+  videoLoaded = false;
+  hideUpNext();
+  hideSyncPrompt();
+  showMediaStatus(message, true);
+  document.getElementById('mediaRetry').hidden = true;
+  document.getElementById('mediaHere').hidden = false;
+  updateSyncStatus(false);
+}
+// Coming back to this tab: reopen it here, which steps the other tab out
+document.getElementById('mediaHere').addEventListener('click', () => location.reload());
 
 // Enters presence the first time, updates our name/colour after that
 function publishPresence() {
@@ -1502,6 +1547,7 @@ function whenPlayable() {
 
 // Nobody answered: we're first in the room, so start what the link asked for
 function startAlone() {
+  if (leftForOtherTab) return;
   inSync = true;
   if (!linkMedia) return;
   loadMedia(linkMedia).then(whenPlayable).then(() => {
