@@ -236,6 +236,16 @@ export class Room extends DurableObject {
 
     // A reconnecting viewer replaces their old socket instead of appearing twice
     for (const old of this.ctx.getWebSockets(clientId)) old.close(4000, 'replaced');
+    // One device, one seat: the same device opening this room in another tab or window takes
+    // over from the older one, which is told why (the page offers to switch back)
+    if (vid) {
+      for (const old of this.ctx.getWebSockets()) {
+        const m = old.deserializeAttachment();
+        if (!m || m._v !== vid || m.clientId === clientId) continue;
+        try { old.send(JSON.stringify({ t: 'closed', reason: 'elsewhere', message: 'This room is now open in another tab on this device. HexTV plays one room at a time on each device.' })); } catch { /* closing */ }
+        old.close(4001, 'elsewhere');
+      }
+    }
     const created = !others.length && !this.openedAt;
     if (!this.openedAt) { this.openedAt = Date.now(); await this.ctx.storage.put('openedAt', this.openedAt); }
 
