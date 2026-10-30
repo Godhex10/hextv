@@ -1410,11 +1410,22 @@ function hideSyncPrompt() {
   document.getElementById('syncOverlay').style.display = 'none';
 }
 
+// The room's clock starts only once this device can actually play: on a slow link the video
+// would otherwise begin already behind its own room and spend its first minute chasing it
+function whenPlayable() {
+  if (yt.active || video.readyState >= 3) return Promise.resolve();
+  return new Promise(resolve => {
+    const done = () => { clearTimeout(timer); video.removeEventListener('canplay', done); resolve(); };
+    const timer = setTimeout(done, 60000);
+    video.addEventListener('canplay', done);
+  });
+}
+
 // Nobody answered: we're first in the room, so start what the link asked for
 function startAlone() {
   inSync = true;
   if (!linkMedia) return;
-  loadMedia(linkMedia).then(() => {
+  loadMedia(linkMedia).then(whenPlayable).then(() => {
     if (clock) return;
     if (startAt) setClock({ playing: false, time: startAt, at: serverNow() });
     userPlay();
@@ -1715,6 +1726,7 @@ video.addEventListener('canplay', () => stat.startup());
 let stallAt = 0;
 video.addEventListener('waiting', () => { if (hasPlayedOnce && !video.seeking && clock && clock.playing) stallAt = performance.now(); });
 video.addEventListener('playing', () => {
+  hasPlayedOnce = true;   // stalls before the first frame are startup, not buffering
   if (!stallAt) return;
   const s = (performance.now() - stallAt) / 1000;
   stallAt = 0;
