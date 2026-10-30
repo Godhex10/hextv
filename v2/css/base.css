@@ -79,12 +79,10 @@ a { color: inherit; }
 .brand .brand-text { color: var(--red); }
 .brand .brand-text span { color: #fff; }
 .brand-mark {
-  width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center;
-  background: var(--grad-red); color: #fff; font-size: 0.65rem;
-  box-shadow: 0 4px 14px -4px rgba(229, 9, 20, 0.7);
+  width: 24px; height: 24px; flex: none; background: url(../img/hextv-h.svg) center / contain no-repeat;
+  filter: drop-shadow(0 3px 8px rgba(229, 9, 20, 0.55));
   transition: transform 0.4s var(--ease-spring);
 }
-.brand-mark i { margin-left: 2px; }
 .brand:hover .brand-mark { transform: rotate(-8deg) scale(1.08); }
 
 /* ── Reaction icon colours (room + landing mock) ──── */
@@ -156,13 +154,11 @@ a { color: inherit; }
 .preloader.done { opacity: 0; visibility: hidden; pointer-events: none; }
 .pl-logo { position: relative; width: 64px; height: 64px; }
 .pl-mark {
-  position: absolute; inset: 0; display: grid; place-items: center; border-radius: 18px;
-  background: var(--grad-red); color: #fff; font-size: 1.4rem;
-  box-shadow: 0 14px 40px -12px rgba(229, 9, 20, 0.9);
+  position: absolute; inset: 6px; background: url(../img/hextv-h.svg) center / contain no-repeat;
+  filter: drop-shadow(0 10px 24px rgba(229, 9, 20, 0.75));
   animation: plPulse 1.6s var(--ease) infinite;
 }
-.pl-mark i { margin-left: 4px; }
-.pl-halo { position: absolute; inset: 0; border-radius: 18px; border: 2px solid rgba(229, 9, 20, 0.55); animation: plHalo 1.6s var(--ease) infinite; }
+.pl-halo { position: absolute; inset: 0; border-radius: 50%; border: 2px solid rgba(229, 9, 20, 0.55); animation: plHalo 1.6s var(--ease) infinite; }
 @keyframes plPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
 @keyframes plHalo { from { transform: scale(1); opacity: 0.9; } to { transform: scale(1.7); opacity: 0; } }
 .pl-name {

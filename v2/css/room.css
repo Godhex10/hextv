@@ -15,7 +15,7 @@ body { font-size: 13.5px; display: flex; flex-direction: column; height: 100dvh;
   background: #0b0b0f; border-bottom: 1px solid var(--border);
 }
 .logo-sm { font-size: 1.2rem; }
-.logo-sm .brand-mark { width: 26px; height: 26px; border-radius: 8px; }
+.logo-sm .brand-mark { width: 22px; height: 22px; }
 .topbar-divider { width: 1px; height: 22px; background: var(--border-hover); flex-shrink: 0; }
 .room-info { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 1px; }
 .room-title-wrapper { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }

@@ -6,6 +6,8 @@
 <meta name="robots" content="noindex, nofollow">
 <meta name="theme-color" content="#050507">
 <title>HexTV Control Room</title>
+<link rel="icon" href="img/hextv-h.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="img/hextv-icon-180.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,400&display=swap" rel="stylesheet">
@@ -55,9 +57,8 @@ button { cursor: pointer; }
 /* ── brand ── */
 .brand { display: inline-flex; align-items: center; gap: 8px; font-family: var(--display); font-size: 21px; letter-spacing: .05em; line-height: 1; color: var(--red); white-space: nowrap; text-decoration: none; }
 .brand .w span { color: #fff; }
-.brand-mark { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; background: var(--grad-red); color: #fff; font-size: 10px;
-  box-shadow: 0 4px 14px -4px rgba(229,9,20,.7); transition: transform .4s var(--spring); }
-.brand-mark i { margin-left: 2px; }
+.brand-mark { width: 22px; height: 22px; flex: none; background: url(img/hextv-h.svg) center / contain no-repeat;
+  filter: drop-shadow(0 3px 8px rgba(229,9,20,.55)); transition: transform .4s var(--spring); }
 .brand:hover .brand-mark { transform: rotate(-8deg) scale(1.08); }
 
 /* ── login ── */
@@ -349,7 +350,7 @@ tr.expand td { background: rgba(229,9,20,.03); }
 .skel { display: block; height: 10px; border-radius: 5px; background: linear-gradient(90deg, var(--surface-2), var(--surface-3), var(--surface-2)); background-size: 200% 100%; animation: shimmer 1.4s infinite; }
 .veil { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; background: var(--black); transition: opacity .6s var(--ease), visibility .6s; }
 .veil.gone { opacity: 0; visibility: hidden; }
-.veil .brand-mark { width: 48px; height: 48px; border-radius: 14px; font-size: 18px; animation: beat 1.2s ease-in-out infinite; }
+.veil .brand-mark { width: 48px; height: 48px; animation: beat 1.2s ease-in-out infinite; }
 
 @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @keyframes ping { 0% { transform: scale(.7); opacity: .9; } 80%, 100% { transform: scale(2.3); opacity: 0; } }
@@ -401,12 +402,12 @@ body.still .tbl tbody tr, body.still .alert-row, body.still .split span { transi
 </head>
 <body>
 <div class="ambient" aria-hidden="true"><span class="a1"></span><span class="a2"></span><span class="a3"></span></div>
-<div class="veil hide" id="veil"><span class="brand-mark"><i class="fa-solid fa-play"></i></span></div>
+<div class="veil hide" id="veil"><span class="brand-mark"></span></div>
 
 <!-- ── Sign in ── -->
 <div class="login hide" id="login">
   <form class="login-card" id="loginForm">
-    <span class="brand"><span class="brand-mark"><i class="fa-solid fa-play"></i></span><span class="w">Hex<span>TV</span></span></span>
+    <span class="brand"><span class="brand-mark"></span><span class="w">Hex<span>TV</span></span></span>
     <h1>Control <em>room</em></h1>
     <p>Sign in to see how HexTV is doing right now.</p>
     <label class="field"><i class="fa-solid fa-lock"></i><input type="password" id="pw" placeholder="Dashboard password" autocomplete="current-password" required></label>
@@ -418,7 +419,7 @@ body.still .tbl tbody tr, body.still .alert-row, body.still .split span { transi
 <!-- ── Dashboard ── -->
 <div id="app" class="hide">
   <header class="top">
-    <a class="brand" href="index.html"><span class="brand-mark"><i class="fa-solid fa-play"></i></span><span class="w">Hex<span>TV</span></span></a>
+    <a class="brand" href="index.html"><span class="brand-mark"></span><span class="w">Hex<span>TV</span></span></a>
     <span class="crumb">Control room</span>
     <span class="livepill" id="livePill"><span class="dot"></span><span class="t" id="liveText">Live</span></span>
     <span class="spacer"></span>
