@@ -16,7 +16,7 @@ from urllib.parse import urlencode, urlsplit
 import httpx
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
@@ -1456,12 +1456,11 @@ def public_url():
     return {"url": found}
 
 # ── Invite links ───────────────────────────────────────────────────────────────
-# /r/<room>?mb=…&se=…&ep=… is the link people share. Chat apps (WhatsApp, Instagram, X…) fetch it
-# and get a page of preview tags (poster card + "Join my watch party: …"); people are sent on
-# to the room page itself.
+# /r/<room>?mb=…&se=…&ep=…&title=… is the link people share. Everyone gets the same small page:
+# its preview tags make the poster card in chat apps (which read the tags but don't run scripts),
+# and its script sends people straight on to the room. Previewers can't be told apart by their
+# user agent — WhatsApp Web fetches links like an ordinary browser — so nothing depends on it.
 ROOM_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
-PREVIEW_BOTS = re.compile(r"facebookexternalhit|facebot|whatsapp|twitterbot|telegrambot|slackbot|discordbot|linkedinbot|"
-                          r"skypeuripreview|snapchat|pinterest|redditbot|embedly|vkshare|applebot|googlebot|bingbot|bot\b|crawler|preview", re.I)
 ROOM_PARAMS = ("mb", "se", "ep", "yt", "stream", "title")
 
 
@@ -1489,13 +1488,12 @@ def invite_link(room: str, request: Request):
         raise HTTPException(status_code=404, detail="No such room")
     q = {k: request.query_params.get(k) for k in ROOM_PARAMS if request.query_params.get(k)}
     target = _room_page() + "?" + urlencode({"room": room, **q})
-    if not PREVIEW_BOTS.search(request.headers.get("user-agent", "")):
-        return RedirectResponse(target, status_code=302)
-
     base = str(request.base_url).rstrip("/")
     mb = q.get("mb", "") if re.fullmatch(r"\d{1,24}", q.get("mb", "")) else ""
     se, ep = _int(q.get("se")), _int(q.get("ep"))
-    title, cover = _invite_title(mb, se, ep, re.sub(r"\s·\sS\d+\sE\d+$", "", q.get("title", "")))
+    # The link carries the title, so the page answers at once; only a link without one is looked up
+    title = re.sub(r"\s·\sS\d+\sE\d+$", "", q.get("title", ""))
+    title = re.sub(r"\s*\[[^\]]*\]", "", title).strip() if title else _invite_title(mb, se, ep, "")[0]
     episode = f" · S{se} E{ep}" if se else ""
     if mb:
         image = f"{base}/og/{mb}.jpg" + (f"?se={se}&ep={ep}" if se else "")
@@ -1511,7 +1509,8 @@ def invite_link(room: str, request: Request):
 <meta property="og:description" content="Watch together, perfectly in sync — no sign-up needed.">
 <meta property="og:image" content="{esc(image)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
 <meta property="og:url" content="{esc(str(request.url))}"><meta name="twitter:card" content="summary_large_image">
-<meta http-equiv="refresh" content="0;url={esc(target)}"></head><body><a href="{esc(target)}">Join the watch party</a></body></html>"""
+<script>location.replace({json.dumps(target)})</script></head>
+<body style="background:#050507;color:#fff;font-family:sans-serif"><a href="{esc(target)}" style="color:#ff2d3a">Join the watch party</a></body></html>"""
     return HTMLResponse(page, headers={"Cache-Control": "public, max-age=300"})
 
 
