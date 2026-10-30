@@ -48,6 +48,15 @@
     <div class="cw-track" id="cwTrack"></div>
   </section>
 
+  <!-- My List: titles saved with the heart (js/mylist.js); hidden when empty -->
+  <section class="shelf my-list" id="myList" hidden>
+    <div class="shelf-head">
+      <h3><i class="fa-solid fa-heart"></i>My List</h3>
+      <span class="shelf-count" id="myListCount"></span>
+    </div>
+    <div class="shelf-track" id="myListTrack"></div>
+  </section>
+
   <div class="filters-bar">
     <div class="type-toggle" role="tablist" aria-label="Content type">
       <button class="genre-pill active" data-type="all">All</button>
@@ -78,6 +87,7 @@
     <div class="detail-actions">
       <select class="detail-select" id="detailDub" aria-label="Audio version" hidden></select>
       <button class="detail-watch" id="detailWatch" disabled><i class="fa-solid fa-user-group"></i> <span>Watch together</span></button>
+      <button class="detail-list" id="detailList" aria-pressed="false"><i class="fa-regular fa-heart"></i> <span>My List</span></button>
     </div>
   </div>
 </div>
@@ -85,6 +95,7 @@
 <script src="js/moviebox.js"></script>
 <script src="js/telemetry.js"></script>
 <script src="js/history.js"></script>
+<script src="js/mylist.js"></script>
 <script>
 /* ══════════════════════════════════════════════
     STATE
@@ -188,6 +199,7 @@ function cardHTML(it, i, shelf) {
   return `
     <div class="movie-card" tabindex="0" data-id="${escapeHTML(it.subject_id)}" style="--i:${delay}">
       <div class="poster-wrap">
+        ${heartHTML(it.subject_id)}
         <img class="poster-img" src="${escapeHTML(it.cover || FALLBACK_POSTER)}" alt="" loading="lazy" onerror="this.src='${FALLBACK_POSTER}'">
         ${it.type === 'series' ? '<span class="format-badge webm">SERIES</span>' : ''}
         <div class="card-overlay-btn"><span class="play-badge"><i class="fa-solid fa-play"></i> Watch</span></div>
@@ -203,6 +215,7 @@ function cardHTML(it, i, shelf) {
 }
 
 view.addEventListener('click', e => {
+  if (onHeart(e)) return;
   const more = e.target.closest('.shelf-more');
   if (more) {
     pills.querySelector(`[data-cat="${CSS.escape(more.dataset.cat)}"]`)?.click();
@@ -216,6 +229,77 @@ view.addEventListener('keydown', e => {
   const card = e.target.closest('.movie-card');
   if (card && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openDetail(cardIndex.get(card.dataset.id)); }
 });
+
+/* ══════════════════════════════════════════════
+    MY LIST
+══════════════════════════════════════════════ */
+const myListBox = document.getElementById('myList');
+const myListTrack = document.getElementById('myListTrack');
+
+function heartHTML(id) {
+  const on = window.HexMyList && HexMyList.has(id);
+  return `<button class="heart-btn${on ? ' on' : ''}" data-heart="${escapeHTML(id)}" aria-pressed="${on}" aria-label="${on ? 'Remove from' : 'Add to'} My List"><i class="fa-${on ? 'solid' : 'regular'} fa-heart"></i></button>`;
+}
+
+function renderMyList() {
+  const list = window.HexMyList ? HexMyList.list() : [];
+  myListBox.hidden = !list.length;
+  document.getElementById('myListCount').textContent = list.length === 1 ? '1 title' : `${list.length} titles`;
+  myListTrack.innerHTML = list.map((it, i) => cardHTML(it, i, 9)).join('');
+}
+
+// Every heart for that title (grid, rows, details) follows the change
+function paintHearts(id, on) {
+  document.querySelectorAll(`[data-heart="${CSS.escape(id)}"]`).forEach(b => {
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', on);
+    b.setAttribute('aria-label', `${on ? 'Remove from' : 'Add to'} My List`);
+    b.innerHTML = `<i class="fa-${on ? 'solid' : 'regular'} fa-heart"></i>`;
+  });
+  if (detail && detail.item && String(detail.item.subject_id) === id) paintDetailList();
+}
+
+function toggleMyList(item) {
+  const on = HexMyList.toggle(item);
+  paintHearts(String(item.subject_id), on);
+  renderMyList();
+  return on;
+}
+
+// A click on a heart saves/removes the title; returns true so the card doesn't open
+function onHeart(e) {
+  const btn = e.target.closest('[data-heart]');
+  if (!btn) return false;
+  e.stopPropagation();
+  const item = cardIndex.get(btn.dataset.heart) || (HexMyList.list().find(x => x.subject_id === btn.dataset.heart));
+  if (item) {
+    const on = toggleMyList(item);
+    if (on) btn.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.35)' }, { transform: 'scale(1)' }], { duration: 350, easing: 'ease-out' });
+  }
+  return true;
+}
+
+myListTrack.addEventListener('click', e => {
+  if (onHeart(e)) return;
+  const card = e.target.closest('.movie-card');
+  if (card) openDetail(cardIndex.get(card.dataset.id));
+});
+myListTrack.addEventListener('keydown', e => {
+  const card = e.target.closest('.movie-card');
+  if (card && e.target === card && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openDetail(cardIndex.get(card.dataset.id)); }
+});
+
+const detailListBtn = document.getElementById('detailList');
+function paintDetailList() {
+  const on = !!(detail && detail.item && HexMyList.has(detail.item.subject_id));
+  detailListBtn.classList.toggle('on', on);
+  detailListBtn.setAttribute('aria-pressed', on);
+  detailListBtn.innerHTML = `<i class="fa-${on ? 'solid' : 'regular'} fa-heart"></i> <span>${on ? 'In My List' : 'My List'}</span>`;
+}
+detailListBtn.addEventListener('click', () => { if (detail && detail.item) toggleMyList(detail.item); });
+
+renderMyList();
+window.addEventListener('pageshow', renderMyList);
 
 /* ══════════════════════════════════════════════
     CONTINUE WATCHING
@@ -346,7 +430,8 @@ let detail = null;     // { id, title, type, seasons, season, episode }
 
 async function openDetail(item) {
   if (!item) return;
-  detail = { id: item.subject_id, title: item.title, type: item.type, seasons: [], season: 0, episode: 0 };
+  detail = { id: item.subject_id, title: item.title, type: item.type, seasons: [], season: 0, episode: 0, item };
+  paintDetailList();
   document.getElementById('detailPoster').src = item.cover || FALLBACK_POSTER;
   document.getElementById('detailTitle').textContent = item.title;
   document.getElementById('detailType').textContent = item.type === 'series' ? 'Series' : 'Movie';

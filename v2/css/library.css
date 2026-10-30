@@ -292,3 +292,21 @@ body { font-size: 14px; overflow-x: hidden; }
 /* Touch screens have no hover: the remove button is always there */
 @media (hover: none) { .cw-x { opacity: 1; } }
 @media (max-width: 640px) { .cw-track { grid-auto-columns: 250px; } .cw-card { height: 142px; } .cw-poster { width: 66px; } }
+
+/* ── My List ─────────────────────────────────────── */
+.my-list .shelf-head h3 { display: flex; align-items: center; gap: 0.5rem; }
+.my-list .shelf-head h3 i { color: var(--red-hot); font-size: 0.8rem; }
+.shelf-count { font-size: 0.74rem; font-weight: 600; color: var(--muted); }
+.heart-btn { position: absolute; z-index: 3; top: 7px; left: 7px; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; cursor: pointer;
+  font-size: 0.74rem; color: #fff; background: rgba(0, 0, 0, 0.55); border: 1px solid rgba(255, 255, 255, 0.18); backdrop-filter: blur(6px);
+  opacity: 0; transition: opacity 0.2s, background 0.2s, color 0.2s; }
+.movie-card:hover .heart-btn, .movie-card:focus-within .heart-btn, .heart-btn.on { opacity: 1; }
+.heart-btn:hover { background: rgba(0, 0, 0, 0.75); }
+.heart-btn.on { color: var(--red-hot); background: rgba(255, 255, 255, 0.92); border-color: transparent; }
+@media (hover: none) { .heart-btn { opacity: 1; } }
+.detail-list { display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem; height: 44px; padding: 0 1rem; border-radius: 11px; cursor: pointer;
+  font-family: inherit; font-size: 0.85rem; font-weight: 700; color: #fff; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.16); transition: background 0.2s, border-color 0.2s; }
+.detail-list:hover { background: rgba(255, 255, 255, 0.13); }
+.detail-list.on { border-color: rgba(255, 45, 58, 0.5); }
+.detail-list.on i { color: var(--red-hot); }
+@media (max-width: 640px) { .detail-list span { display: none; } .detail-list { padding: 0 0.9rem; } }

@@ -118,6 +118,20 @@
       <div class="tap-layer" id="tapLayer" hidden></div>
       <div class="buffer-spin" id="bufferSpin" hidden aria-hidden="true"></div>
       <div class="behind-note" id="behindNote" hidden role="status"></div>
+      <div class="up-next" id="upNext" hidden role="dialog" aria-label="Next episode">
+        <div class="up-next-card">
+          <img id="upNextPoster" alt="">
+          <div class="up-next-txt">
+            <span class="up-next-k">Up next</span>
+            <span class="up-next-ep" id="upNextEp">Episode</span>
+            <span class="up-next-sub" id="upNextSub"></span>
+            <div class="up-next-btns">
+              <button class="up-next-play" id="upNextPlay"><span class="up-next-ring"><svg width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="9"/><circle id="upNextRing" cx="11" cy="11" r="9"/></svg><b id="upNextSecs">10</b></span>Play now</button>
+              <button class="up-next-cancel" id="upNextCancel">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="controls-bar">
@@ -286,7 +300,16 @@ document.getElementById('roomIdDisplay').textContent = 'Room: ' + roomId;
 // Invite links must work for friends: when the host watches on localhost (keeping their
 // upload free for guests), swap in the public tunnel address the API reports.
 let publicBase = null;
-const inviteLink = () => (publicBase || location.origin) + location.pathname + location.search;
+// Where the API serves the site (Vercel, the local API, a tunnel), invites use the short /r/ link,
+// which chat apps show as a poster card; the stand-alone dev server only has the room page itself
+const inviteLink = () => {
+  if (MB.API !== location.origin) return (publicBase || location.origin) + location.pathname + location.search;
+  const q = new URLSearchParams(location.search);
+  q.delete('room');
+  q.delete('t');
+  const base = (publicBase || location.origin) + location.pathname.replace(/[^/]*$/, '').replace(/\/app\/$/, '/');
+  return base + 'r/' + encodeURIComponent(roomId) + (q.toString() ? '?' + q : '');
+};
 const showInviteLink = () => { document.getElementById('shareUrl').textContent = inviteLink(); };
 if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
   MB.get('/public-url').then(d => { publicBase = d.url; showInviteLink(); }).catch(() => {});
@@ -359,6 +382,8 @@ function initAbly() {
     });
 
     channel = ablyClient.channels.get('room:' + roomId);
+
+    if (channel.control) channel.control.subscribe(onControl);
 
     // Video sync — ignore own messages
     channel.subscribe('video_sync', (msg) => {
@@ -439,6 +464,7 @@ urlInput.addEventListener('keydown', e => { if (e.key === 'Enter') loadVideo(); 
 function loadVideo() {
   const url = urlInput.value.trim();
   if (!url) return;
+  if (!mayControl('load')) return refuseControl('load');
   const ytId = RoomYouTube.parse(url);
   // A YouTube video names itself once its player is ready
   const media = ytId ? { yt: ytId, title: '' } : { url, title: document.getElementById('roomNameDisplay').textContent };
@@ -721,6 +747,7 @@ function loadMedia(media) {
   if (mediaReady && sameMedia(media, currentMedia)) return mediaReady;
   currentMedia = media;
   struggleTold = new Set();
+  hideUpNext();
   const token = ++mediaToken;
   document.getElementById('pasteHint')?.remove();
   if (media.title) document.getElementById('roomNameDisplay').textContent = media.title;
@@ -998,12 +1025,14 @@ function setClock(c) {
 }
 
 function userPlay() {
+  if (!mayControl('play')) return refuseControl('play');
   const t = clock && !clock.playing ? clock.time : video.currentTime;
   setClock({ playing: true, time: t, at: serverNow() });
   broadcastSync({ type: 'play', time: t, at: clock.at, media: currentMedia });
 }
 
 function userPause() {
+  if (!mayControl('play')) return refuseControl('play');
   const t = video.currentTime;
   setClock({ playing: false, time: t, at: serverNow() });
   broadcastSync({ type: 'pause', time: t, media: currentMedia });
@@ -1011,6 +1040,7 @@ function userPause() {
 
 // While playing, everyone jumps now and restarts together a moment later
 function userSeek(t) {
+  if (!mayControl('play')) return refuseControl('play');
   const playing = clock ? clock.playing : false;
   const at = serverNow() + (playing ? lead() * 1000 : 0);
   setClock({ playing, time: t, at });
@@ -1369,6 +1399,11 @@ function handleRemoteSync(payload, msg) {
   } else if (payload.type === 'seek') {
     const playing = payload.playing !== undefined ? payload.playing : !!(clock && clock.playing);
     setClock({ playing, time: payload.time, at: payload.at || sentAt });
+  } else if (payload.type === 'upnext' && payload.media && payload.media.mb) {
+    showUpNext(payload.media, payload.at || sentAt + UP_NEXT_MS);
+  } else if (payload.type === 'upnext_cancel') {
+    if (upNext) addSystemMsg(`${viewerName(msg && msg.clientId)} cancelled the next episode`);
+    hideUpNext();
   }
 }
 
@@ -1580,22 +1615,158 @@ function updateViewersUI() {
     stack.appendChild(more);
   }
 
-  // Sidebar list
+  // Sidebar list: the host first; the host also gets the room controls and "Make host"
   const list = document.getElementById('viewersList');
-  list.innerHTML = '';
-  viewerArr.forEach((v, i) => {
-    const row = document.createElement('div');
-    row.className = 'viewer-row';
-    row.innerHTML = `
-      <div class="v-avatar" style="background:${v.color||'#555'}">${(v.name||'G').slice(0,2).toUpperCase()}</div>
+  const hostId = currentHost();
+  const iHost = hostId === myClientId && !!(channel && channel.control);
+  const ordered = Array.from(viewers, ([id, v]) => ({ ...v, id, isMe: id === myClientId }))
+    .sort((a, b) => (b.id === hostId) - (a.id === hostId));
+  list.innerHTML = (iHost ? `
+    <div class="host-card"><h5><i class="fa-solid fa-crown"></i> You're the host</h5>
+      <button class="host-opt" data-ctl="lock" role="switch" aria-checked="${ctl.lock}"><span><b>Only I control playback</b><small>Guests can't play, pause, skip or start the next episode</small></span><span class="switch${ctl.lock ? ' on' : ''}"></span></button>
+      <button class="host-opt" data-ctl="guestsLoad" role="switch" aria-checked="${ctl.guestsLoad}"><span><b>Guests can change the video</b><small>Paste a link or start another episode in this room</small></span><span class="switch${ctl.guestsLoad ? ' on' : ''}"></span></button>
+    </div>` : '') + ordered.map(v => `
+    <div class="viewer-row">
+      <div class="v-avatar" style="background:${escapeHTML(v.color || '#555')}">${escapeHTML((v.name || 'G').slice(0, 2).toUpperCase())}</div>
       <div class="viewer-info">
-        <div class="viewer-name">${escapeHTML(v.name||'Guest')} ${v.isMe?'(You)':''}</div>
+        <div class="viewer-name">${escapeHTML(v.name || 'Guest')} ${v.isMe ? '(You)' : ''}</div>
         <div class="viewer-status">Watching now</div>
       </div>
-      ${i===0?'<span class="host-badge"><i class="fa-solid fa-crown"></i> Host</span>':'<div class="online-dot"></div>'}`;
-    list.appendChild(row);
-  });
+      ${v.id === hostId ? '<span class="host-badge"><i class="fa-solid fa-crown"></i> Host</span>'
+        : iHost ? `<button class="make-host" data-host="${escapeHTML(v.id)}"><i class="fa-solid fa-crown"></i> Make host</button>` : '<div class="online-dot"></div>'}
+    </div>`).join('');
 }
+
+/* ══════════════════════════════════════════════
+    HOST CONTROLS — the room server decides who hosts and what guests may do
+    (room-server Room.ctl); the page shows it and explains a refused action
+══════════════════════════════════════════════ */
+let ctl = { host: null, lock: false, guestsLoad: true };
+// Without host controls (the Ably fallback) the longest-present viewer counts as host
+const currentHost = () => ctl.host || (viewers.size ? viewers.keys().next().value : myClientId);
+const amHost = () => currentHost() === myClientId;
+const viewerName = id => (id && viewers.get(id) && viewers.get(id).name) || 'Someone';
+function mayControl(kind) {
+  if (!channel || !channel.control || amHost()) return true;
+  return kind === 'load' ? ctl.guestsLoad : !ctl.lock;
+}
+function refuseControl(kind) {
+  showToast(`Only ${viewerName(currentHost())} (host) can ${kind === 'load' ? 'change the video' : 'control playback'}`);
+}
+
+function onControl(next, before, by) {
+  const was = ctl;
+  ctl = { ...ctl, ...next };
+  document.body.classList.toggle('guest-locked', !mayControl('play'));
+  document.body.classList.toggle('guest-noload', !mayControl('load'));
+  if (before) {
+    const who = viewerName(by);
+    if (was.lock !== ctl.lock) addSystemMsg(ctl.lock ? `${who} locked playback — only the host can control it` : `${who} unlocked playback — everyone can control it`);
+    if (was.guestsLoad !== ctl.guestsLoad) addSystemMsg(ctl.guestsLoad ? `${who} let everyone change the video` : 'Only the host can change the video now');
+    if (was.host !== ctl.host && ctl.host) {
+      addSystemMsg(`${ctl.host === myClientId ? 'You are' : viewerName(ctl.host) + ' is'} now the host`);
+      if (ctl.host === myClientId) showToast('You are now the host');
+    }
+  }
+  updateViewersUI();
+}
+
+document.getElementById('viewersList').addEventListener('click', e => {
+  if (!channel || !channel.control || !amHost()) return;
+  const opt = e.target.closest('[data-ctl]');
+  if (opt) channel.control.set({ [opt.dataset.ctl]: !ctl[opt.dataset.ctl] });
+  const mk = e.target.closest('[data-host]');
+  if (mk && confirm(`Make ${viewerName(mk.dataset.host)} the host? They'll control the room settings.`)) channel.control.set({ makeHost: mk.dataset.host });
+});
+
+/* ══════════════════════════════════════════════
+    UP NEXT — when an episode ends the whole room moves to the next one after a countdown.
+    The host's page offers it and starts it; anyone allowed to control playback can
+    start it early or cancel it.
+══════════════════════════════════════════════ */
+const UP_NEXT_MS = 10000;
+let upNext = null;        // { media, at, timer } while the countdown runs
+let upNextAsked = '';     // the episode we've already offered a follow-up for
+const mediaKey = m => m ? `${m.mb}:${m.se}:${m.ep}` : '';
+const showName = m => (m.title || '').replace(/\s·\sS\d+\sE\d+$/, '');
+
+async function findNextEpisode(m) {
+  const seasons = ((await MB.get('/episodes/' + encodeURIComponent(m.mb))).seasons || []).filter(s => s.episode_count > 0);
+  const cur = seasons.find(s => s.season === m.se);
+  const next = cur && m.ep < cur.episode_count ? { se: m.se, ep: m.ep + 1 }
+    : (s => s && { se: s.season, ep: 1 })(seasons.find(s => s.season > m.se));
+  return next && { mb: m.mb, se: next.se, ep: next.ep, title: `${showName(m)} · S${next.se} E${next.ep}` };
+}
+
+// Near the end of an episode, the host's page looks up what comes next and tells the room
+setInterval(async () => {
+  const m = currentMedia;
+  if (!m || !m.mb || !m.se || upNext || !clock || !clock.playing || !amHost()) return;
+  if (!(video.duration > 60) || expectedPos() < video.duration - 1.5 || upNextAsked === mediaKey(m)) return;
+  upNextAsked = mediaKey(m);
+  try {
+    const next = await findNextEpisode(m);
+    if (currentMedia !== m) return;
+    if (!next) { addSystemMsg('That was the last episode 🎬'); return; }
+    const at = serverNow() + UP_NEXT_MS;
+    broadcastSync({ type: 'upnext', media: next, at });
+    showUpNext(next, at);
+  } catch { /* no countdown this time */ }
+}, 1000);
+
+function showUpNext(media, at) {
+  hideUpNext();
+  upNext = { media, at };
+  document.getElementById('upNextEp').textContent = `Episode ${media.ep}`;
+  document.getElementById('upNextSub').textContent = `${showName(media)} · Season ${media.se}`;
+  const img = document.getElementById('upNextPoster');
+  img.removeAttribute('src');
+  MB.get('/detail/' + encodeURIComponent(media.mb)).then(d => { if (upNext && upNext.media === media && d.cover) img.src = d.cover; }).catch(() => {});
+  document.getElementById('upNext').hidden = false;
+  const ending = currentMedia && currentMedia.ep ? `Episode ${currentMedia.ep} finished` : 'Finished';
+  addSystemMsg(`${ending} — everyone moves to Episode ${media.ep} in ${Math.max(1, Math.round((at - serverNow()) / 1000))}s`);
+  const ring = document.getElementById('upNextRing');
+  const paint = () => {
+    if (!upNext) return;
+    const left = Math.max(0, at - serverNow());
+    document.getElementById('upNextSecs').textContent = Math.ceil(left / 1000);
+    ring.style.strokeDashoffset = String(56.5 * (1 - left / UP_NEXT_MS));
+    // The host starts it; everyone else follows the load that arrives
+    if (left <= 0) { clearInterval(upNext.timer); if (amHost()) playNext(media); }
+  };
+  upNext.timer = setInterval(paint, 250);
+  paint();
+}
+
+function hideUpNext() {
+  if (upNext) clearInterval(upNext.timer);
+  upNext = null;
+  const box = document.getElementById('upNext');
+  if (box) box.hidden = true;
+}
+
+function playNext(media) {
+  hideUpNext();
+  loadMedia(media).then(whenPlayable).then(() => {
+    if (sameMedia(currentMedia, media) && clock && !clock.playing) userPlay();
+  }).catch(() => {});
+  setClock({ playing: false, time: 0, at: serverNow() });
+  broadcastSync({ type: 'load', media, title: media.title });
+  addSystemMsg(`Now playing Episode ${media.ep}`);
+}
+
+document.getElementById('upNextPlay').addEventListener('click', () => {
+  if (!upNext) return;
+  if (!mayControl('load')) return refuseControl('load');
+  playNext(upNext.media);
+});
+document.getElementById('upNextCancel').addEventListener('click', () => {
+  if (!upNext) return;
+  if (!mayControl('play')) return refuseControl('play');
+  hideUpNext();
+  broadcastSync({ type: 'upnext_cancel' });
+  addSystemMsg('You cancelled the next episode');
+});
 
 /* ══════════════════════════════════════════════
     REACTIONS

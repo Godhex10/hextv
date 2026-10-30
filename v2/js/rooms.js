@@ -16,7 +16,9 @@
     this._handlers = {};
     this._subs = {};
     this._presenceSubs = [];
+    this._ctlSubs = [];
     this._members = [];
+    this._ctl = null;      // host controls: { host, lock, guestsLoad } (our server only)
     this._queue = [];
     this._timeReqs = new Map();
     this._seq = 0;
@@ -41,6 +43,12 @@
           return Promise.resolve();
         },
         get() { return Promise.resolve(self._members.slice()); }
+      },
+      // Host controls; set() is only accepted from the host
+      control: {
+        get: () => self._ctl,
+        subscribe(cb) { self._ctlSubs.push(cb); },
+        set(data) { return self._send({ t: 'ctl', data }); }
       }
     };
     this.channels = { get: () => channel };
@@ -97,6 +105,13 @@
     };
   };
 
+  RoomSocket.prototype._setCtl = function (ctl, by) {
+    if (!ctl) return;
+    const before = this._ctl;
+    this._ctl = ctl;
+    this._ctlSubs.forEach(cb => { try { cb(ctl, before, by); } catch (e) { console.error(e); } });
+  };
+
   RoomSocket.prototype._onMessage = function (msg) {
     if (msg.t === 'welcome') {
       this._open = true;
@@ -109,12 +124,16 @@
       queued.forEach(m => this._send(m));
       // A new socket never replays what was missed, so the page re-syncs from the room
       this._emit('connected', { resumed: false });
+      this._setCtl(msg.ctl);
     } else if (msg.t === 'msg') {
       (this._subs[msg.name] || []).forEach(cb => cb({ name: msg.name, data: msg.data, clientId: msg.clientId, timestamp: msg.timestamp }));
     } else if (msg.t === 'presence') {
       this._members = msg.members || this._members;
       const m = msg.member || {};
       this._presenceSubs.forEach(cb => cb({ action: msg.action, clientId: m.clientId, data: m.data, timestamp: m.timestamp }));
+      this._setCtl(msg.ctl);
+    } else if (msg.t === 'ctl') {
+      this._setCtl(msg.ctl, msg.by);
     } else if (msg.t === 'closed') {
       // Room closed by the admin, viewer removed, or new rooms paused
       this._closed = true;
