@@ -467,7 +467,7 @@ body.still .tbl tbody tr, body.still .alert-row, body.still .split span { transi
         <div class="grid g4">
           <div class="card tile hot reveal"><div class="lbl"><i class="fa-solid fa-door-open"></i>Rooms live</div><div class="val" id="kRooms">0</div><div class="foot" id="kRoomsFoot">&nbsp;</div></div>
           <div class="card tile reveal" style="--d:60ms"><div class="lbl"><i class="fa-solid fa-user-group"></i>Watching now</div><div class="val" id="kViewers">0</div><div class="foot" id="kViewersFoot">&nbsp;</div></div>
-          <div class="card tile reveal" style="--d:120ms"><div class="lbl"><i class="fa-solid fa-mobile-screen"></i>Web / app</div><div class="val"><span id="kWeb">0</span><small>web</small><span id="kApp">0</span><small>app</small></div>
+          <div class="card tile reveal" style="--d:120ms"><div class="lbl"><i class="fa-solid fa-mobile-screen"></i>Web / apps</div><div class="val"><span id="kWeb">0</span><small>web</small><span id="kApp">0</span><small>apps</small></div>
             <div class="split" id="kSplit"><span style="flex-grow:1;background:var(--s1)"></span><span style="flex-grow:0;background:var(--s2)"></span></div></div>
           <div class="card tile reveal" style="--d:180ms"><div class="lbl"><i class="fa-solid fa-mountain"></i>Peak today</div><div class="val" id="kPeak">0</div><div class="foot">most viewers at once</div><svg class="spark" id="sparkPeak"></svg></div>
         </div>
@@ -1027,7 +1027,7 @@ body.still .tbl tbody tr, body.still .alert-row, body.still .split span { transi
       { h: 'Room', f: r => `<span class="mono">${esc(r.room)}</span>` },
       { h: 'Watching', cls: 't', f: r => `<span class="typ" style="background:${(TYPE[r.mtype] || TYPE.link)[1]}"></span>${esc(r.title || 'Choosing something…')}` },
       { h: 'State', f: r => r.playing ? '<span class="chip play"><i class="fa-solid fa-circle"></i>Playing</span>' : '<span class="chip"><i class="fa-solid fa-pause"></i>Paused</span>' },
-      { h: 'Viewers', r: 1, f: r => `${r.viewers}${r.app ? ` <span style="color:var(--muted)">(${r.app} app)</span>` : ''}` },
+      { h: 'Viewers', r: 1, f: r => `${r.viewers}${r.app ? ` <span style="color:var(--muted)">(${r.app} in apps)</span>` : ''}` },
       { h: 'Open for', r: 1, cls: 'hide-sm', f: r => fmtDur(Date.now() - r.opened_at) },
       { h: '', r: 1, f: r => `<button class="btn sm" data-viewers="${esc(r.room)}" title="Viewers"><i class="fa-solid fa-users"></i></button> <button class="btn sm danger" data-close="${esc(r.room)}" title="Close room"><i class="fa-solid fa-xmark"></i></button>` }
     ], L.rooms, 'No rooms are open right now');
@@ -1068,7 +1068,7 @@ body.still .tbl tbody tr, body.still .alert-row, body.still .split span { transi
     const sv = k => S.map(b => b[k] || 0);
     tileIn('usageTiles', 'rooms', 'fa-door-open', 'Rooms created', fmtN, true).set(T.roomsCreated, `${fmtN(T.inviteJoins)} joined from an invite`, sv('rooms_created'));
     tileIn('usageTiles', 'uniq', 'fa-fingerprint', 'Unique viewers', fmtN, true).set(T.uniqueViewers, T.uniqueViewers ? `${fmtPct(T.returning / T.uniqueViewers)} came back` : '', days > 1 ? sv('unique') : sv('sessions'));
-    tileIn('usageTiles', 'hours', 'fa-clock', 'Hours watched', fmtH, true).set(T.watchHours, T.appWatchHours ? `${fmtH(T.appWatchHours)} in the app` : plural(T.sessions, 'page visit'), sv('watch_s'));
+    tileIn('usageTiles', 'hours', 'fa-clock', 'Hours watched', fmtH, true).set(T.watchHours, T.appWatchHours ? `${fmtH(T.appWatchHours)} in the apps` : plural(T.sessions, 'page visit'), sv('watch_s'));
     tileIn('usageTiles', 'size', 'fa-users-viewfinder', 'Avg room', v => v.toFixed(1), false).set(T.avgRoomSize, `people · ${T.avgRoomMinutes ? fmtDur(T.avgRoomMinutes * 60000) : '—'} long`);
     tileIn('usageTiles', 'joins', 'fa-right-to-bracket', 'Joins', fmtN, true).set(T.joins, `${T.joins ? fmtPct(T.inviteJoins / T.joins) : '—'} from invite links`, sv('joins'));
     tileIn('usageTiles', 'ret', 'fa-rotate-left', 'Returning', fmtN, false).set(T.returning, 'seen on an earlier day');
@@ -1198,10 +1198,10 @@ body.still .tbl tbody tr, body.still .alert-row, body.still .split span { transi
     const groups = [
       ['country', 'Countries', 'fa-earth-africa', r => countryName(r.val), 'bars'],
       ['device', 'Devices', 'fa-laptop', r => r.val[0].toUpperCase() + r.val.slice(1), 'donut'],
-      ['platform', 'Web or app', 'fa-mobile-screen-button', r => r.val === 'app' ? 'Android app' : 'Website', 'donut'],
+      ['platform', 'Web or app', 'fa-mobile-screen-button', r => ({ app: 'Android app', windows: 'Windows app' })[r.val] || 'Website', 'donut'],
       ['os', 'Operating systems', 'fa-microchip', r => r.val, 'bars'],
       ['browser', 'Browsers', 'fa-compass', r => r.val, 'bars'],
-      ['appVersion', 'App versions', 'fa-code-branch', r => 'v' + r.val, 'bars']
+      ['appVersion', 'App versions', 'fa-code-branch', r => r.val.replace(/^(win|android) /, (m, p) => (p === 'win' ? 'Windows' : 'Android') + ' v'), 'bars']
     ];
     if (!wrap.children.length) {
       wrap.innerHTML = groups.map(([k, name, icon, , kind], i) => `<div class="card reveal" style="--d:${(i % 3) * 70}ms"><div class="card-h"><h3><i class="fa-solid ${icon}"></i>${name}</h3><span class="sub" data-sub="${k}"></span></div><div class="${kind === 'bars' ? 'bars' : ''}" data-k="${k}"></div></div>`).join('');
@@ -1292,7 +1292,7 @@ body.still .tbl tbody tr, body.still .alert-row, body.still .split span { transi
       const r = await api('/admin/room/viewers?room=' + encodeURIComponent(room));
       if (!r.viewers.length) { el.innerHTML = '<div class="hint">Nobody is in this room right now.</div>'; return; }
       el.innerHTML = r.viewers.map((v, i) => `<div class="viewer" style="animation-delay:${i * 45}ms"><span class="av">${esc((v.name || '?')[0].toUpperCase())}</span>
-        <div><div>${esc(v.name)}</div><div class="meta">${v.platform === 'app' ? 'app' : 'web'} · joined ${ago(v.since)}</div></div>
+        <div><div>${esc(v.name)}</div><div class="meta">${({ app: 'Android app', windows: 'Windows app' })[v.platform] || 'web'} · joined ${ago(v.since)}</div></div>
         <button class="btn sm danger" data-kick="${esc(v.clientId)}"><i class="fa-solid fa-user-slash"></i>Remove</button></div>`).join('');
       el.onclick = async e => {
         const b = e.target.closest('[data-kick]'); if (!b) return;

@@ -19,8 +19,12 @@
     return body;
   }
 
-  // Browsers can't send the Referer/Origin the video CDN insists on, so MP4s go through the API relay
+  // Browsers can't send the Referer/Origin the video CDN insists on, so MP4s go through the API relay.
+  // The Windows app can send them itself and plays straight from the CDN, unless that failed once.
+  const desktop = window.HexDesktop;
+  let directOff = false;
   function proxied(stream) {
+    if (desktop && !directOff && stream.headers && desktop.allowMedia(stream.url, stream.headers)) return stream.url;
     const h = stream.headers ? '&h=' + encodeURIComponent(btoa(JSON.stringify(stream.headers))) : '';
     // The relay only serves links the API signed
     const t = stream.proxy_token ? `&exp=${stream.proxy_token.exp}&sig=${stream.proxy_token.sig}` : '';
@@ -63,5 +67,8 @@
     return 'room.html?' + p.toString();
   }
 
-  window.MB = { API, ROOMS, get, proxied, rankStreams, srtToVtt, roomUrl };
+  const isRelayed = src => typeof src === 'string' && src.startsWith(API + '/proxy');
+  const useRelay = () => { directOff = true; };   // a direct play failed: back to the relay for this session
+
+  window.MB = { API, ROOMS, get, proxied, isRelayed, useRelay, rankStreams, srtToVtt, roomUrl };
 })();

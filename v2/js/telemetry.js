@@ -17,7 +17,9 @@
   if (!vid) { vid = 'v' + Math.random().toString(36).slice(2, 12) + Date.now().toString(36); store('hx_vid', vid); }
 
   const ua = navigator.userAgent;
-  const platform = window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() ? 'app' : 'web';
+  // 'app' is the Android app, 'windows' the Windows app, 'web' everything else
+  const platform = window.HexDesktop ? 'windows'
+    : window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() ? 'app' : 'web';
   const device = /iPad|Tablet/i.test(ua) || (/Android/i.test(ua) && !/Mobile/i.test(ua)) ? 'tablet'
     : /Mobi|iPhone|Android/i.test(ua) ? 'phone' : 'desktop';
   const os = /Android/i.test(ua) ? 'Android' : /iPhone|iPad|iPod/i.test(ua) ? 'iOS' : /Windows/i.test(ua) ? 'Windows'
@@ -31,7 +33,7 @@
   let title = null;   // { key, title, type } of what this page is watching
 
   function payload() {
-    return JSON.stringify({ vid, platform, device, os, browser, appVersion: window.HEXTV_APP_VERSION || '',
+    return JSON.stringify({ vid, platform, device, os, browser, appVersion: (window.HexDesktop && window.HexDesktop.version) || window.HEXTV_APP_VERSION || '',
       c: counters, searches, errors, title });
   }
   function send(useBeacon) {

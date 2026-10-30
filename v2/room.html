@@ -35,6 +35,7 @@
   </div>
   <div class="topbar-right">
     <div class="viewer-stack" id="viewerStack" aria-label="Current viewers"></div>
+    <a class="btn-icon open-app" id="openAppBtn" hidden title="Open this room in the HexTV app for Windows" aria-label="Open in the HexTV app"><i class="fa-brands fa-windows"></i></a>
     <a class="btn-icon" href="library.html" title="Back to Library" aria-label="Back to Library"><i class="fa-solid fa-film"></i></a>
     <button class="btn-icon" id="settingsBtn" title="Settings" aria-label="Settings"><i class="fa-solid fa-gear"></i></button>
     <button class="btn-share" id="shareBtn" aria-label="Share room">
@@ -825,6 +826,13 @@ function playStream(i, keep) {
 let lastRetry = { index: -1, at: 0 };
 video.addEventListener('error', () => {
   if (!currentMedia || !currentMedia.mb || !video.getAttribute('src')) return;
+  // The Windows app plays straight from the CDN; if that's refused, use the relay like the website
+  if (!MB.isRelayed(video.getAttribute('src'))) {
+    MB.useRelay();
+    stat.error('relay', 'direct play refused, using the relay');
+    playStream(streamIndex, true);
+    return;
+  }
   if (lastRetry.index !== streamIndex || performance.now() - lastRetry.at > 60000) {
     lastRetry = { index: streamIndex, at: performance.now() };
     showToast('Connection hiccup — reloading the video');
@@ -1658,6 +1666,19 @@ document.getElementById('syncOverlay').addEventListener('keydown', e => {
 });
 
 /* ══════════════════════════════════════════════
+    WINDOWS APP — on a Windows browser, offer to open this room in the installed app
+══════════════════════════════════════════════ */
+(function () {
+  const btn = document.getElementById('openAppBtn');
+  if (window.HexDesktop || !/Windows NT/.test(navigator.userAgent)) return;
+  btn.hidden = false;
+  btn.addEventListener('click', () => {
+    // hextv://room?room=…&mb=… — the app opens the same room (nothing happens if it isn't installed)
+    location.href = 'hextv://room' + location.search;
+  });
+})();
+
+/* ══════════════════════════════════════════════
     STATS — anonymous numbers for the HexTV dashboard (js/telemetry.js)
 ══════════════════════════════════════════════ */
 const stat = {
@@ -1695,7 +1716,7 @@ let driftTick = 0;
 setInterval(() => {
   if (!videoLoaded || video.paused || waitingForTap || document.hidden) return;
   stat.add('watch_s', 1);
-  if (currentMedia && currentMedia.mb) {
+  if (currentMedia && currentMedia.mb && MB.isRelayed(video.currentSrc)) {
     const s = mediaStreams[streamIndex] || {};
     // Bytes a second of this version costs the relay (its file size over its length; ~1.5 Mbps if unknown)
     const bps = s.size_mb && s.duration_sec ? s.size_mb * 1048576 / s.duration_sec : 190000;

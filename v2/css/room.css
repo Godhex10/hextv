@@ -414,3 +414,7 @@ body.fs:not(.show-controls) .player-menu { display: none; }
 @keyframes skipFlash { 20% { opacity: 1; transform: translateY(-50%) scale(1); } 100% { opacity: 0; transform: translateY(-50%) scale(1.05); } }
 .skip-flash.mid { left: 50%; margin-left: -32px; width: 64px; height: 64px; padding: 0; justify-content: center; }
 .skip-flash.mid i { font-size: 1.4rem; }
+
+/* "Open in the HexTV app" — only shown on Windows browsers */
+.btn-icon[hidden] { display: none; }
+.btn-icon.open-app { color: #7cc2ff; }
