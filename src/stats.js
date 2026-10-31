@@ -28,8 +28,8 @@ const num = v => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 // Metric names a client may add to (anything else is ignored)
 const CLIENT_COUNTERS = new Set(['sessions', 'watch_s', 'watch_relay_s', 'relay_bytes', 'startup_ms_sum', 'startup_n',
   'buffer_n', 'buffer_s', 'drift_sum', 'drift_n', 'behind_n', 'step_downs', 'slow_mode_n', 'chat_n', 'react_n',
-  'err_lookup', 'err_relay', 'err_youtube', 'err_room', 'err_subs', 'err_struggle', 'searches', 'searches_empty', 'title_join']);
-const ERROR_KINDS = new Set(['lookup', 'relay', 'youtube', 'room', 'subs', 'struggle']);   // struggle: a viewer couldn't keep up (slow connection or busy device)
+  'err_lookup', 'err_relay', 'err_youtube', 'err_room', 'err_subs', 'err_struggle', 'err_audio', 'searches', 'searches_empty', 'title_join']);
+const ERROR_KINDS = new Set(['lookup', 'relay', 'youtube', 'room', 'subs', 'struggle', 'audio']);   // struggle: a viewer couldn't keep up (slow connection or busy device)
 
 export class Stats extends DurableObject {
   constructor(ctx, env) {
@@ -349,7 +349,7 @@ export class Stats extends DurableObject {
     }
     const tot = this.sumSince(since, ['rooms_created', 'joins', 'invite_joins', 'watch_s', 'watch_s_app', 'chat_n', 'react_n', 'room_seconds', 'rooms_closed',
       'room_size_sum', 'startup_ms_sum', 'startup_n', 'buffer_n', 'buffer_s', 'drift_sum', 'drift_n', 'behind_n', 'step_downs', 'slow_mode_n',
-      'err_lookup', 'err_relay', 'err_youtube', 'err_room', 'err_subs', 'err_struggle', 'sessions', 'searches', 'searches_empty', 'health_ok', 'health_fail']);
+      'err_lookup', 'err_relay', 'err_youtube', 'err_room', 'err_subs', 'err_struggle', 'err_audio', 'sessions', 'searches', 'searches_empty', 'health_ok', 'health_fail']);
     const unique = this.sql.exec('SELECT COUNT(DISTINCT vid) AS n FROM viewers WHERE day >= ?', sinceDay).one().n;
     const returning = this.sql.exec(`SELECT COUNT(DISTINCT v.vid) AS n FROM viewers v JOIN first_seen f ON f.vid = v.vid
       WHERE v.day >= ? AND f.day < v.day`, sinceDay).one().n;
@@ -394,7 +394,7 @@ export class Stats extends DurableObject {
         driftAvgS: tot.drift_n ? tot.drift_sum / tot.drift_n : null,
         behindPerHour: watchH > 0 ? tot.behind_n / watchH : null,
         stepDowns: tot.step_downs, slowMode: tot.slow_mode_n,
-        errors: { lookup: tot.err_lookup, relay: tot.err_relay, youtube: tot.err_youtube, room: tot.err_room, subs: tot.err_subs, struggle: tot.err_struggle },
+        errors: { lookup: tot.err_lookup, relay: tot.err_relay, youtube: tot.err_youtube, room: tot.err_room, subs: tot.err_subs, struggle: tot.err_struggle, audio: tot.err_audio },
         errlog: rows('SELECT at, kind, detail, platform FROM errlog ORDER BY id DESC LIMIT 25'),
         health: {
           checks: rows('SELECT at, ok, ms, detail FROM health WHERE at > ? ORDER BY at ASC', now - 2 * DAY).slice(-192),
