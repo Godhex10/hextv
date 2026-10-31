@@ -272,6 +272,17 @@ section { scroll-margin-top: 70px; }
 .donut-legend .s { color: var(--muted); font-size: 10.5px; min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
 
 /* ring gauges */
+.usage-bar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 0 0 14px; padding: 10px 14px; border-radius: 12px; font-size: 12px; color: var(--text-2);
+  background: var(--surface-2, rgba(255,255,255,.03)); border: 1px solid var(--border, rgba(255,255,255,.08)); }
+.usage-bar b { color: var(--text-1, #fff); }
+.usage-bar .src { display: inline-flex; align-items: center; gap: 6px; }
+.usage-bar .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); }
+.usage-bar .dot.off { background: var(--warning); }
+.usage-bar button { margin-left: auto; }
+.usage-h { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; letter-spacing: .04em; color: var(--text-2); margin: 16px 0 10px; }
+.usage-h i { color: var(--red, #e50914); }
+.gauge-card .src-chip { display: inline-block; margin-top: 6px; font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 99px; background: var(--surface-3); color: var(--text-2); }
+.gauge-card .src-chip.est { color: var(--warning); }
 .gauge-card { display: grid; grid-template-columns: 104px minmax(0,1fr); gap: 16px; align-items: center; }
 .gauge { position: relative; width: 104px; height: 104px; }
 .gauge svg { width: 100%; height: 100%; transform: rotate(135deg); overflow: visible; }
@@ -555,8 +566,12 @@ body.still .tbl tbody tr, body.still .alert-row, body.still .split span { transi
 
       <!-- 5. Limits -->
       <section id="limits">
-        <div class="sec-head reveal"><span class="idx">05</span><h2>Free-plan limits</h2><p>Warnings at 70% and 90%</p></div>
-        <div class="grid g3 stack" id="limitCards"></div>
+        <div class="sec-head reveal"><span class="idx">05</span><h2>Usage &amp; costs</h2><p>Vercel Pro and Cloudflare Free · read from each provider every 15 minutes</p></div>
+        <div class="usage-bar reveal" id="usageBar"></div>
+        <h3 class="usage-h reveal"><i class="fa-solid fa-triangle"></i> Vercel · Pro plan (website, library, video relay)</h3>
+        <div class="grid g3 stack" id="vercelCards"></div>
+        <h3 class="usage-h reveal"><i class="fa-solid fa-cloud"></i> Cloudflare · Free plan (rooms, chat, stats) — resets daily at 00:00 UTC</h3>
+        <div class="grid g3 stack" id="cfCards"></div>
       </section>
 
       <!-- 6. Audience -->
@@ -1164,33 +1179,76 @@ body.still .tbl tbody tr, body.still .alert-row, body.still .split span { transi
   }
 
   function renderLimits() {
-    const L = data.limits, wrap = $('limitCards');
-    const st = p => p >= 0.9 ? ['critical', 'fa-circle-exclamation', 'Nearly used up'] : p >= 0.7 ? ['warning', 'fa-triangle-exclamation', 'Getting close'] : ['good', 'fa-circle-check', 'Plenty left'];
-    const cards = [
-      { k: 'vercel', icon: 'fa-film', name: 'Vercel video traffic', used: fmtB(L.vercel.used), limit: '100 GB a month', p: L.vercel.pct, meta: `Resets ${dayLbl(L.vercel.resets)} · estimated from what viewers played` },
-      { k: 'cf', icon: 'fa-cloud', name: 'Cloudflare requests', used: fmtN(L.cloudflare.used), limit: '100k a day', p: L.cloudflare.pct, meta: `Resets in ${fmtDur(L.cloudflare.resets - Date.now())} · rooms, chat and stats` },
-      { k: 'st', icon: 'fa-database', name: 'Stats storage', used: fmtB(L.storage.used), limit: '1 GB', p: L.storage.pct, meta: 'Kept for 45 days · old data cleans itself up' }
+    const L = data.limits, V = L.vercel, F = L.cloudflare;
+    const st = p => p >= 1 ? ['critical', 'fa-circle-exclamation', 'Over'] : p >= 0.9 ? ['critical', 'fa-circle-exclamation', 'Nearly used up'] : p >= 0.7 ? ['warning', 'fa-triangle-exclamation', 'Getting close'] : ['good', 'fa-circle-check', 'Plenty left'];
+    const gb = b => b == null ? '—' : (b / 1e9 >= 100 ? Math.round(b / 1e9) : (b / 1e9).toFixed(2)) + ' GB';
+    const usd = n => '$' + (Number(n) || 0).toFixed(2);
+    const vSrc = V.connected ? `Vercel · ${ago(V.at)}` : 'Estimate — Vercel not connected';
+    const cSrc = F.connected ? `Cloudflare · ${ago(F.at)}` : 'HexTV count — Cloudflare not connected';
+
+    // The summary line: where the numbers come from, and the most important money facts
+    const b = V.budget;
+    $('usageBar').innerHTML = `
+      <span class="src"><span class="dot${V.connected ? '' : ' off'}"></span>Vercel: <b>${V.connected ? 'connected' : 'not connected'}</b>${V.error ? ` <span class="chip" title="${esc(V.error)}">last read failed</span>` : ''}</span>
+      <span class="src"><span class="dot${F.connected ? '' : ' off'}"></span>Cloudflare: <b>${F.connected ? 'connected' : 'not connected'}</b>${F.error ? ` <span class="chip" title="${esc(F.error)}">last read failed</span>` : ''}</span>
+      <span>Charges beyond the $20 credit this month: <b>${V.onDemandKnown ? usd(V.onDemand) : 'unknown'}</b></span>
+      <span>Spending cap: <b>${b ? usd(b.amount) + (b.pause ? ' · pauses at the cap' : ' · does NOT pause') : 'unknown'}</b></span>
+      <button class="btn" id="usageRefresh"><i class="fa-solid fa-rotate"></i> Refresh now</button>`;
+    $('usageRefresh').onclick = async () => {
+      try { await api('/admin/refresh-usage', {}); toast('Usage refreshed'); load(); } catch (e) { toast('Could not refresh: ' + (e.message || 'error')); }
+    };
+
+    const vCards = [
+      { k: 'credit', icon: 'fa-wallet', name: 'Monthly credit', used: usd(V.creditUsed), limit: '$20 credit', p: V.creditPct,
+        meta: `Movie traffic ${usd(V.cost.fot)} · servers ${usd(V.cost.cpu + V.cost.memory)}${V.cost.fdt + V.cost.requests > 0 ? ` · pages ${usd(V.cost.fdt + V.cost.requests)}` : ''} · resets ${dayLbl(V.resets)}`, src: vSrc, est: true },
+      { k: 'fot', icon: 'fa-film', name: 'Movie traffic', used: gb(V.fot), limit: `${gb(V.creditGB)} (what $20 buys at $${V.prices.fotPerGB}/GB)`, p: V.fot / V.creditGB,
+        meta: `Last 24 hours: ${gb(V.fot24h)} ≈ ${usd(V.perDay)}/day${V.daysLeft != null ? (V.daysLeft <= 0 ? ' · credit used up' : V.daysLeft > 60 ? ' · at this pace the credit lasts more than 2 months' : ` · credit lasts ~${V.daysLeft.toFixed(1)} more days at this pace`) : ''}`, src: vSrc, est: !V.connected },
+      { k: 'spend', icon: 'fa-credit-card', name: 'Charges beyond credit', used: V.onDemandKnown ? usd(V.onDemand) : '—', limit: b ? `${usd(b.amount)} cap` : 'cap unknown', p: b && b.amount ? V.onDemand / b.amount : 0,
+        meta: b ? (b.pause ? 'Vercel pauses the projects at the cap' : 'The cap only sends emails — charges continue past it') : 'Connect Vercel to see this', src: vSrc, est: !V.connected, warnIf: b && !b.pause },
+      { k: 'fdt', icon: 'fa-globe', name: 'Pages & data transfer', used: gb(V.fdt), limit: '1 TB included', p: V.fdt == null ? 0 : V.fdt / 1e12, meta: 'Everything sent to visitors, movies included', src: vSrc, est: !V.connected },
+      { k: 'req', icon: 'fa-arrow-right-arrow-left', name: 'CDN requests', used: V.requests == null ? '—' : fmtN(V.requests), limit: '1M included', p: V.requests == null ? 0 : V.requests / 1e6, meta: 'Page loads, library and relay requests', src: vSrc, est: !V.connected },
+      { k: 'cpu', icon: 'fa-microchip', name: 'Server time', used: V.cpuH ? V.cpuH.toFixed(2) + ' h' : '—', limit: `CPU · $${V.prices.cpuPerHour.toFixed(2)}/h`, p: V.creditUsed ? (V.cost.cpu + V.cost.memory) / V.credit : 0,
+        meta: `CPU ${usd(V.cost.cpu)} + memory ${usd(V.cost.memory)} this month`, src: vSrc, est: !V.connected }
     ];
-    // 270° ring gauge with marks at 70% and 90%
+    const unit = (c, v) => v == null ? '—' : c.unit === 'bytes' ? fmtB(v) : c.unit === 'GB-s' ? fmtN(Math.round(v)) + ' GB-s' : fmtN(Math.round(v));
+    const icons = { workers: 'fa-bolt', rooms: 'fa-door-open', time: 'fa-stopwatch', writes: 'fa-pen-to-square', storage: 'fa-database' };
+    const names = { workers: 'Requests today', rooms: 'Room requests today', time: 'Room running time today', writes: 'Storage writes today', storage: 'Storage' };
+    const metas = { workers: 'Page loads of rooms, stats, dashboard', rooms: 'Joins and chat/sync messages (20 messages = 1)', time: 'Rooms kept awake while people watch',
+      writes: 'Stats and room state saved', storage: 'Stats and rooms · total on the free plan' };
+    const cCards = F.items.map(c => ({ k: 'cf-' + c.k, icon: icons[c.k], name: names[c.k], used: unit(c, c.used), limit: unit(c, c.limit) + (c.total ? '' : ' a day'),
+      p: c.pct, meta: c.used == null ? 'Connect Cloudflare to see this' : metas[c.k], src: cSrc, est: !F.connected }));
+
+    drawGauges($('vercelCards'), vCards, st);
+    drawGauges($('cfCards'), cCards, st);
+  }
+
+  // 270° ring gauges with marks at 70% and 90%
+  function drawGauges(wrap, cards, st) {
     const R = 42, CIRC = 2 * Math.PI * R, ARC = CIRC * 0.75;
     const mark = f => `<circle class="mk" r="${R}" stroke-dasharray="1.4 ${CIRC}" stroke-dashoffset="${-(ARC * f - 0.7)}"/>`;
-    if (!wrap.children.length) {
-      wrap.innerHTML = cards.map((c, i) => `<div class="card gauge-card reveal" style="--d:${i * 80}ms" data-k="${c.k}">
+    if (wrap.children.length !== cards.length) {
+      wrap.innerHTML = cards.map((c, i) => `<div class="card gauge-card reveal" style="--d:${i * 70}ms" data-k="${c.k}">
         <div class="gauge"><svg viewBox="-52 -52 104 104"><circle class="bg" r="${R}" stroke-dasharray="${ARC} ${CIRC}"/><circle class="fg" r="${R}" stroke-dasharray="${ARC} ${CIRC}" stroke-dashoffset="${ARC}"/>${mark(0.7)}${mark(0.9)}</svg>
           <div class="center"><div class="v">0%</div><div class="l">used</div></div></div>
-        <div class="gauge-info"><h3><i class="fa-solid ${c.icon}"></i>${c.name}</h3><div class="used"><span class="u"></span> <small>of ${c.limit}</small></div>
-          <div class="status-slot" style="margin-top:4px"></div><div class="meta"></div></div></div>`).join('');
+        <div class="gauge-info"><h3><i class="fa-solid ${c.icon}"></i>${c.name}</h3><div class="used"><span class="u"></span> <small class="lim"></small></div>
+          <div class="status-slot" style="margin-top:4px"></div><div class="meta"></div><span class="src-chip"></span></div></div>`).join('');
       wrap.querySelectorAll('.reveal').forEach(el => reveal.observe(el));
     }
     cards.forEach(c => {
-      const el = wrap.querySelector(`[data-k="${c.k}"]`), [g, ic, txt] = st(c.p);
+      const el = wrap.querySelector(`[data-k="${c.k}"]`);
+      let [g, ic, txt] = st(c.p || 0);
+      if (c.warnIf && g === 'good') [g, ic, txt] = ['warning', 'fa-triangle-exclamation', 'No pause at the cap'];
       el.querySelector('.status-slot').innerHTML = `<span class="status ${g}"><i class="fa-solid ${ic}"></i>${txt}</span>`;
       el.querySelector('.u').textContent = c.used;
+      el.querySelector('.lim').textContent = 'of ' + c.limit;
       el.querySelector('.meta').textContent = c.meta;
-      countUp(el.querySelector('.center .v'), c.p * 100, n => (n >= 10 || n === 0 ? Math.round(n) : n.toFixed(1)) + '%');
+      const chip = el.querySelector('.src-chip');
+      chip.textContent = c.src; chip.classList.toggle('est', !!c.est && !/· /.test(c.src) || /not connected/.test(c.src));
+      const pct = (c.p || 0) * 100;
+      countUp(el.querySelector('.center .v'), pct, n => (n >= 10 || n === 0 ? Math.round(n) : n.toFixed(1)) + '%');
       const fg = el.querySelector('.fg');
       fg.style.stroke = C[g]; fg.style.color = C[g];
-      nextFrame(() => { fg.style.strokeDashoffset = ARC * (1 - Math.min(1, Math.max(c.p > 0 ? 0.012 : 0, c.p))); });
+      nextFrame(() => { fg.style.strokeDashoffset = ARC * (1 - Math.min(1, Math.max(c.p > 0 ? 0.012 : 0, c.p || 0))); });
     });
   }
 
