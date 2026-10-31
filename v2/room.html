@@ -1152,9 +1152,16 @@ function enginePlay() {
   if (!video.paused) return;
   playRequestedAt = performance.now();
   video.play().catch(e => {
-    // Only a refusal needs the viewer's tap. A play interrupted by a version switch, a seek or
-    // a pause (AbortError) isn't one — the next tick simply asks again.
+    // A play interrupted by a version switch, a seek or a pause (AbortError) isn't a refusal —
+    // the next tick simply asks again
     if (e && e.name === 'AbortError') return;
+    // The browser won't allow sound before a tap (phones, a room opened from a link): play
+    // silently right away instead of waiting, and let the viewer's first tap turn sound on
+    if (e && e.name === 'NotAllowedError' && !video.muted) {
+      muteUntilTap();
+      video.play().catch(() => { if (clock && clock.playing) showSyncPrompt(); });
+      return;
+    }
     if (clock && clock.playing) showSyncPrompt();
   });
 }
@@ -1550,9 +1557,17 @@ function startAlone() {
   if (leftForOtherTab) return;
   inSync = true;
   if (!linkMedia) return;
-  loadMedia(linkMedia).then(whenPlayable).then(() => {
+  loadMedia(linkMedia).then(() => {
+    // Start straight away (iPhones only load a video once it's asked to play); a "Continue
+    // Watching" link starts at its spot. The room's clock follows once it can really play.
+    if (startAt && !yt.active) {
+      if (video.readyState >= 1) video.currentTime = startAt;
+      else video.addEventListener('loadedmetadata', () => { if (!clock) video.currentTime = startAt; }, { once: true });
+    }
+    enginePlay();
+    return whenPlayable();
+  }).then(() => {
     if (clock) return;
-    if (startAt) setClock({ playing: false, time: startAt, at: serverNow() });
     userPlay();
   }).catch(() => {});
 }
@@ -1948,18 +1963,32 @@ function dismissSyncOverlay() {
   tick();
 }
 
-// Safety net: YouTube muted itself (the phone wouldn't let it start with sound) — offer a tap
+/* Sound before a tap: the video plays silently with a "Tap for sound" button when the browser
+   wouldn't allow sound yet (or YouTube muted itself); the viewer's first tap anywhere turns it on */
 const soundBtn = document.getElementById('soundBtn');
+let mutedForAutoplay = false;
+function muteUntilTap() {
+  mutedForAutoplay = true;
+  video.muted = true;
+  soundBtn.hidden = false;
+}
+function soundOnFromTap(e) {
+  const ytSilent = yt.active && video.silenced;
+  if (!mutedForAutoplay && !ytSilent) return;
+  // A tap on the mute button itself is the viewer choosing: that button's own handler unmutes
+  const own = e && e.target && e.target.closest && e.target.closest('#muteBtn');
+  mutedForAutoplay = false;
+  soundBtn.hidden = true;
+  if (!own) video.muted = false;   // inside this tap the browser allows sound
+}
+['click', 'touchend', 'keydown'].forEach(type => document.addEventListener(type, soundOnFromTap, true));
 setInterval(() => {
-  const silent = yt.active && !video.paused && video.silenced;
+  const ytSilent = yt.active && !video.paused && video.silenced;
+  const silent = !video.paused && ((mutedForAutoplay && video.muted) || ytSilent);
   if (soundBtn.hidden === !silent) return;
   soundBtn.hidden = !silent;
-  if (silent) stat.error('youtube', 'started without sound');
+  if (ytSilent) stat.error('youtube', 'started without sound');
 }, 1000);
-soundBtn.addEventListener('click', () => {
-  video.muted = false;   // inside this tap the phone allows it
-  soundBtn.hidden = true;
-});
 document.getElementById('syncOverlay').addEventListener('keydown', e => {
   if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); dismissSyncOverlay(); }
 });
