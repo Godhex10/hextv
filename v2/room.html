@@ -118,6 +118,7 @@
       <div class="tap-layer" id="tapLayer" hidden></div>
       <div class="buffer-spin" id="bufferSpin" hidden aria-hidden="true"></div>
       <button class="sound-btn" id="soundBtn" hidden><i class="fa-solid fa-volume-high"></i> Tap for sound</button>
+      <div class="audio-note" id="audioNote" hidden role="status"><i class="fa-solid fa-volume-xmark"></i><span id="audioNoteText"></span><button id="audioNoteClose" aria-label="Close"><i class="fa-solid fa-xmark"></i></button></div>
       <div class="behind-note" id="behindNote" hidden role="status"></div>
       <div class="up-next" id="upNext" hidden role="dialog" aria-label="Next episode">
         <div class="up-next-card">
@@ -804,6 +805,7 @@ function loadMedia(media) {
   currentMedia = media;
   struggleTold = new Set();
   hideUpNext();
+  document.getElementById('audioNote').hidden = true;
   const token = ++mediaToken;
   document.getElementById('pasteHint')?.remove();
   if (media.title) document.getElementById('roomNameDisplay').textContent = media.title;
@@ -1982,6 +1984,37 @@ function soundOnFromTap(e) {
   if (!own) video.muted = false;   // inside this tap the browser allows sound
 }
 ['click', 'touchend', 'keydown'].forEach(type => document.addEventListener(type, soundOnFromTap, true));
+
+/* Sound check. Some MovieBox files describe their 6-channel audio in a way Apple's decoder
+   (Safari, and every browser on iPhone) can't read: the picture plays, the sound never does.
+   If a version decodes no sound at all, try the title's other versions (often plain stereo);
+   if none has sound, say so plainly instead of leaving silence, and report it for the dashboard. */
+let audioCheck = null;        // { key, since, done } while judging the version that's playing
+const silentVersions = new Set();
+const versionKey = i => mediaKey(currentMedia) + '#' + i;
+const appleDevice = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent) && !/Chrome|Chromium|Edg/.test(navigator.userAgent));
+setInterval(() => {
+  if (!currentMedia || !currentMedia.mb || yt.active || typeof videoEl.webkitAudioDecodedByteCount !== 'number') return;
+  // Only judge while it's really playing with sound turned on
+  if (videoEl.paused || videoEl.muted || videoEl.volume === 0 || videoEl.readyState < 3 || videoEl.seeking) { if (audioCheck && !audioCheck.done) audioCheck = null; return; }
+  const key = versionKey(streamIndex);
+  if (!audioCheck || audioCheck.key !== key) { audioCheck = { key, since: performance.now(), done: false }; return; }
+  if (audioCheck.done || performance.now() - audioCheck.since < 4000) return;
+  audioCheck.done = true;
+  if (videoEl.webkitAudioDecodedByteCount > 0) return;
+  silentVersions.add(key);
+  const next = mediaStreams.findIndex((s, i) => !silentVersions.has(versionKey(i)));
+  if (next >= 0) {
+    showToast('No sound from this version — trying another');
+    playStream(next, true);
+    return;
+  }
+  const where = appleDevice() ? 'on iPhone and Safari' : 'in this browser';
+  document.getElementById('audioNoteText').textContent = `This title's sound can't play ${where} yet. It works on Android, computers and the HexTV Windows app — or pick another title.`;
+  document.getElementById('audioNote').hidden = false;
+  stat.error('audio', `${(currentMedia.title || '').slice(0, 80)} · no sound ${appleDevice() ? '(Apple device)' : ''}`);
+}, 1000);
+document.getElementById('audioNoteClose').addEventListener('click', () => { document.getElementById('audioNote').hidden = true; });
 setInterval(() => {
   const ytSilent = yt.active && !video.paused && video.silenced;
   const silent = !video.paused && ((mutedForAutoplay && video.muted) || ytSilent);

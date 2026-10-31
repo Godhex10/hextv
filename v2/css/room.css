@@ -471,3 +471,12 @@ body.guest-locked .up-next-cancel, body.guest-noload .up-next-play { display: no
   background: var(--grad-red); box-shadow: 0 12px 30px -10px rgba(229, 9, 20, 0.9); animation: soundPulse 1.6s ease-in-out infinite; }
 .sound-btn[hidden] { display: none; }
 @keyframes soundPulse { 50% { transform: translate(-50%, -50%) scale(1.06); } }
+
+/* "This title's sound can't play here": a version with no decodable sound and nothing else to try */
+.audio-note { position: absolute; z-index: 26; left: 12px; right: 12px; top: 12px; display: flex; align-items: flex-start; gap: 10px; padding: 11px 12px;
+  border-radius: 12px; font-size: 0.8rem; line-height: 1.4; color: #fff; background: rgba(20, 20, 26, 0.94); border: 1px solid rgba(255, 45, 58, 0.45);
+  box-shadow: 0 12px 30px -12px #000; }
+.audio-note[hidden] { display: none; }
+.audio-note > i { color: var(--red-hot); margin-top: 2px; }
+.audio-note span { flex: 1; }
+.audio-note button { border: none; background: none; color: #9a9aa8; cursor: pointer; font-size: 0.85rem; padding: 0 2px; }
