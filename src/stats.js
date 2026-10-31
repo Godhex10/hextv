@@ -16,8 +16,14 @@ import { DurableObject } from 'cloudflare:workers';
 const HOUR = 3600_000;
 const DAY = 24 * HOUR;
 const FLUSH_MS = 60_000;
-const VERCEL_FREE_BYTES = 100 * 1024 ** 3;   // Vercel Hobby: ~100 GB transfer a month
-const CF_FREE_REQUESTS = 100_000;            // Workers Free: 100k requests a day
+// Plans and prices the dashboard compares against (checked 2026-10-31):
+// Vercel Pro, Cape Town region — vercel.com/docs/plans/pro-plan, /docs/pricing/regional-pricing/cpt1.
+// $20 credit each calendar month spent on usage; Pro also includes 1 TB of transfer and 1M CDN requests.
+const VERCEL_PRO = { credit: 20, fotPerGB: 0.43, fdtPerGB: 0.28, fdtIncludedGB: 1000, reqPerMillion: 2.80, reqIncluded: 1_000_000, cpuPerHour: 0.20, memPerGBh: 0.0166 };
+// Cloudflare Workers Free — developers.cloudflare.com/workers/platform/limits and /durable-objects/platform/pricing.
+// Daily limits reset at 00:00 UTC; incoming WebSocket messages count as 1 request per 20.
+const CF_FREE = { workerRequests: 100_000, doRequests: 100_000, doGBs: 13_000, rowsRead: 5_000_000, rowsWritten: 100_000, storageBytes: 5 * 1024 ** 3 };
+const GB = 1e9;   // Vercel bills decimal gigabytes
 const KEEP_DAYS = 45;
 
 const hourOf = t => Math.floor(t / HOUR) * HOUR;
@@ -39,7 +45,8 @@ export class Stats extends DurableObject {
     this.peaks = new Map();       // `${hour}|${name}` -> max
     this.titleDeltas = new Map(); // `${day}|${key}` -> { title, type, joins, watch_s }
     this.lastFlush = Date.now();
-    ctx.blockConcurrencyWhile(async () => this.migrate());
+    this.providers = {};          // latest usage read from Vercel and Cloudflare (see refreshProviders)
+    ctx.blockConcurrencyWhile(async () => { this.migrate(); this.providers = (await ctx.storage.get('providers')) || {}; });
   }
 
   migrate() {
@@ -125,6 +132,7 @@ export class Stats extends DurableObject {
     else if (route === '/settings') out = this.saveSettings(body);
     else if (route === '/signing-key') out = { key: this.signingKey() };
     else if (route === '/cron') out = await this.onCron();
+    else if (route === '/refresh-usage') { await this.refreshProviders(); out = this.limits(); }
     else if (route === '/test-alert') out = await this.notify('info', 'test', 'Test alert from HexTV', 'If you can read this, alerts are working.', true);
     else return new Response('Not found', { status: 404 });
     return Response.json(out ?? { ok: true });
@@ -273,10 +281,16 @@ export class Stats extends DurableObject {
     } else if (ok && ms > 8000) {
       await this.notify('warning', 'moviebox_slow', 'MovieBox is slow', `A health check took ${(ms / 1000).toFixed(1)}s.`);
     }
+    await this.refreshProviders();
     const lim = this.limits();
-    for (const [key, used, label] of [['cf', lim.cloudflare.pct, 'Cloudflare room-server requests today'], ['vercel', lim.vercel.pct, 'Vercel video traffic this month']]) {
-      if (used >= 0.9) await this.notify('critical', key + '_90', `${label} at ${Math.round(used * 100)}%`, 'The free limit is nearly used up; the service may stop until it resets.');
-      else if (used >= 0.7) await this.notify('warning', key + '_70', `${label} at ${Math.round(used * 100)}%`, 'Keep an eye on it.');
+    const v = lim.vercel;
+    if (v.onDemand > 0) await this.notify('critical', 'vercel_ondemand', `Vercel is now charging beyond your $20 credit: $${v.onDemand.toFixed(2)}`, 'Usage past the monthly credit is billed to your card. Check Vercel → Usage, and the spending cap.');
+    else if (v.creditPct >= 1) await this.notify('critical', 'vercel_credit_100', 'Vercel credit used up', `About $${v.creditUsed.toFixed(2)} of the $20 monthly credit is used. Further usage is billed.`);
+    else if (v.creditPct >= 0.75) await this.notify('warning', 'vercel_credit_75', `Vercel credit at ${Math.round(v.creditPct * 100)}%`, `About $${v.creditUsed.toFixed(2)} of $20 used this month${v.daysLeft != null ? `; at today's pace it lasts about ${Math.max(0, v.daysLeft).toFixed(1)} more days` : ''}.`);
+    if (v.budget && !v.budget.pause) await this.notify('warning', 'vercel_budget_nopause', 'Vercel spending cap does not pause', `Your Spend Management budget is $${v.budget.amount} with pause off, so charges can keep going past it. Turn on "pause" in Vercel → Settings → Billing.`);
+    for (const c of lim.cloudflare.items) {
+      if (c.pct >= 0.9) await this.notify('critical', 'cf_' + c.k + '_90', `Cloudflare ${c.name} at ${Math.round(c.pct * 100)}%`, 'Nearly at the free daily limit; rooms may stop working until 00:00 UTC.');
+      else if (c.pct >= 0.7) await this.notify('warning', 'cf_' + c.k + '_70', `Cloudflare ${c.name} at ${Math.round(c.pct * 100)}%`, 'Getting close to the free daily limit.');
     }
     const errNow = this.sql.exec("SELECT COUNT(*) AS n FROM errlog WHERE at > ?", now - HOUR).one().n;
     const errDay = this.sql.exec("SELECT COUNT(*) AS n FROM errlog WHERE at > ? AND at <= ?", now - 25 * HOUR, now - HOUR).one().n;
@@ -304,20 +318,132 @@ export class Stats extends DurableObject {
     return out;
   }
 
+  /* ── provider usage: real numbers from Vercel and Cloudflare ──
+     Needs read-only tokens stored as secrets (VERCEL_TOKEN, CF_API_TOKEN). Without them the
+     dashboard shows HexTV's own estimates, clearly marked as such. */
+  async refreshProviders() {
+    const out = { ...this.providers };
+    if (this.env.VERCEL_TOKEN && this.env.VERCEL_TEAM_ID) {
+      try { out.vercel = { ...(await this.vercelUsage()), at: Date.now() }; out.vercelError = ''; }
+      catch (e) { out.vercelError = String((e && e.message) || e).slice(0, 200); }
+    }
+    if (this.env.CF_API_TOKEN && this.env.CF_ACCOUNT_ID) {
+      try { out.cloudflare = { ...(await this.cloudflareUsage()), at: Date.now() }; out.cloudflareError = ''; }
+      catch (e) { out.cloudflareError = String((e && e.message) || e).slice(0, 200); }
+    }
+    this.providers = out;
+    await this.ctx.storage.put('providers', out);
+    return out;
+  }
+
+  async vercelUsage() {
+    const team = this.env.VERCEL_TEAM_ID;
+    const headers = { Authorization: 'Bearer ' + this.env.VERCEL_TOKEN, 'Content-Type': 'application/json' };
+    const call = async (path, init = {}) => {
+      const r = await fetch('https://api.vercel.com' + path + (path.includes('?') ? '&' : '?') + 'teamId=' + team, { ...init, headers });
+      if (!r.ok) throw new Error(`Vercel answered ${r.status} for ${path.split('?')[0]}`);
+      return r.json();
+    };
+    const now = new Date();
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const dayAgo = new Date(now.getTime() - DAY);
+    // The same query the Vercel CLI's `vercel metrics` sends (team-wide)
+    const metric = async (name, aggregation, start, bucket) => {
+      const body = { scope: { ownerId: team }, timeRange: { start: start.toISOString(), end: now.toISOString() }, bucketSeconds: bucket,
+        metrics: { value: { metric: name, aggregation } }, outputs: ['value'] };
+      const r = await call('/metrics/v1', { method: 'POST', body: JSON.stringify(body) });
+      return Number((r.summary && r.summary[0] && r.summary[0].values && r.summary[0].values.value) || 0);
+    };
+    const [fot, fot24h, fdt, requests, cpuMs, durationMs, memAvgMb] = await Promise.all([
+      metric('vercel.function_invocation.fot_total_bytes', 'sum', monthStart, DAY / 1000),
+      metric('vercel.function_invocation.fot_total_bytes', 'sum', dayAgo, HOUR / 1000),
+      metric('vercel.request.fdt_total_bytes', 'sum', monthStart, DAY / 1000),
+      metric('vercel.request.count', 'count', monthStart, DAY / 1000),
+      metric('vercel.function_invocation.function_cpu_time_ms', 'sum', monthStart, DAY / 1000),
+      metric('vercel.function_invocation.function_duration_ms', 'sum', monthStart, DAY / 1000),
+      metric('vercel.function_invocation.provisioned_memory_mb', 'avg', monthStart, DAY / 1000)
+    ]);
+    // On-demand spend (what's charged beyond the credit) and the Spend Management budget, as Vercel reports them
+    let onDemand = null, budget = null;
+    try { const sp = await call(`/teams/${team}/spend`); onDemand = Number(sp.currentSpend ?? (sp.spend && sp.spend.currentSpend) ?? sp.amount ?? 0); } catch { /* shown as unknown */ }
+    try {
+      const b = await call('/v1/budgets?scope=team');
+      const list = Array.isArray(b) ? b : b.budgets || b.data || [];
+      const t = list.find(x => x.scope === 'team') || list[0];
+      if (t) budget = { amount: Number(t.amount), pause: !!t.pause, status: t.status };
+    } catch { /* shown as unknown */ }
+    return { fot, fot24h, fdt, requests, cpuMs, durationMs, memAvgMb, onDemand, budget, monthStart: monthStart.getTime() };
+  }
+
+  async cloudflareUsage() {
+    const date = dayOf(Date.now());
+    const gql = async (fields) => {
+      const r = await fetch('https://api.cloudflare.com/client/v4/graphql', {
+        method: 'POST', headers: { Authorization: 'Bearer ' + this.env.CF_API_TOKEN, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: `query ($a: String!, $d: Date!) { viewer { accounts(filter: { accountTag: $a }) { ${fields} } } }`, variables: { a: this.env.CF_ACCOUNT_ID, d: date } })
+      });
+      const j = await r.json();
+      if (j.errors && j.errors.length) throw new Error(j.errors[0].message);
+      return j.data.viewer.accounts[0] || {};
+    };
+    const sum = (rows, f) => (rows || []).reduce((t, x) => t + Number((x.sum && x.sum[f]) || 0), 0);
+    const out = { date, notes: [] };
+    // Each dataset on its own, so one Cloudflare change can't blank the whole card
+    try { const a = await gql('workersInvocationsAdaptive(limit: 1000, filter: { date: $d }) { sum { requests } }'); out.workerRequests = sum(a.workersInvocationsAdaptive, 'requests'); } catch (e) { out.notes.push('worker requests: ' + e.message); }
+    try { const a = await gql('durableObjectsInvocationsAdaptiveGroups(limit: 1000, filter: { date: $d }) { sum { requests } }'); out.doRequests = sum(a.durableObjectsInvocationsAdaptiveGroups, 'requests'); } catch (e) { out.notes.push('room requests: ' + e.message); }
+    try { const a = await gql('durableObjectsPeriodicGroups(limit: 1000, filter: { date: $d }) { sum { activeTime inboundWebsocketMsgCount } }'); const g = a.durableObjectsPeriodicGroups;
+      out.doGBs = sum(g, 'activeTime') / 1e6 * 0.125; out.wsIn = sum(g, 'inboundWebsocketMsgCount'); } catch (e) { out.notes.push('room time: ' + e.message); }
+    try { const a = await gql('durableObjectsPeriodicGroups(limit: 1000, filter: { date: $d }) { sum { rowsRead rowsWritten } }'); const g = a.durableObjectsPeriodicGroups;
+      out.rowsRead = sum(g, 'rowsRead'); out.rowsWritten = sum(g, 'rowsWritten'); } catch (e) { out.notes.push('rows: ' + e.message); }
+    try { const a = await gql('durableObjectsStorageGroups(limit: 1, filter: { date: $d }) { max { storedBytes } }'); const g = a.durableObjectsStorageGroups;
+      out.storedBytes = Number((g && g[0] && g[0].max && g[0].max.storedBytes) || 0); } catch (e) { out.notes.push('storage: ' + e.message); }
+    return out;
+  }
+
   limits() {
     const now = Date.now();
     const d = new Date(now);
     const monthStart = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
+    const monthEnd = Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1);
     const dayStart = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
-    const m = this.sumSince(monthStart, ['relay_bytes']);
+    const P = this.providers || {};
+    const own = this.sumSince(monthStart, ['relay_bytes']), own24 = this.sumSince(now - DAY, ['relay_bytes']);
     const t = this.sumSince(dayStart, ['joins', 'beacons', 'config_hits', 'reports', 'ws_msgs', 'admin_calls', 'health_ok', 'health_fail']);
-    // Workers bill incoming WebSocket messages at 20:1; everything else is one request each
-    const cfToday = t.joins + t.beacons + t.config_hits + t.reports + t.admin_calls + t.health_ok + t.health_fail + t.ws_msgs / 20;
-    const vercelBytes = m.relay_bytes;
+
+    /* Vercel: real usage when connected (and from this month), otherwise HexTV's estimate of the relay */
+    const pv = P.vercel && P.vercel.monthStart === monthStart ? P.vercel : null;
+    const fot = pv ? pv.fot : own.relay_bytes, fot24h = pv ? pv.fot24h : own24.relay_bytes;
+    const cpuH = pv ? pv.cpuMs / 3.6e6 : 0, memGBh = pv ? (pv.memAvgMb / 1024) * (pv.durationMs / 3.6e6) : 0;
+    const fdt = pv ? pv.fdt : null, requests = pv ? pv.requests : null;
+    const cost = {
+      fot: fot / GB * VERCEL_PRO.fotPerGB, cpu: cpuH * VERCEL_PRO.cpuPerHour, memory: memGBh * VERCEL_PRO.memPerGBh,
+      fdt: fdt == null ? 0 : Math.max(0, fdt / GB - VERCEL_PRO.fdtIncludedGB) * VERCEL_PRO.fdtPerGB,
+      requests: requests == null ? 0 : Math.max(0, requests - VERCEL_PRO.reqIncluded) / 1e6 * VERCEL_PRO.reqPerMillion
+    };
+    const creditUsed = Object.values(cost).reduce((a, b) => a + b, 0);
+    const perDay = fot24h / GB * VERCEL_PRO.fotPerGB;
+    const vercel = {
+      connected: !!pv, error: P.vercelError || '', at: pv ? pv.at : null, source: pv ? 'Vercel' : 'HexTV estimate',
+      fot, fot24h, fdt, requests, cpuH, memGBh, cost, creditUsed, credit: VERCEL_PRO.credit, creditPct: creditUsed / VERCEL_PRO.credit,
+      creditGB: VERCEL_PRO.credit / VERCEL_PRO.fotPerGB * GB, perDay, daysLeft: perDay > 0 ? (VERCEL_PRO.credit - creditUsed) / perDay : null,
+      onDemand: pv && pv.onDemand != null ? pv.onDemand : 0, onDemandKnown: !!(pv && pv.onDemand != null), budget: pv ? pv.budget : null,
+      prices: VERCEL_PRO, resets: monthEnd
+    };
+
+    /* Cloudflare: today's real numbers when connected, otherwise HexTV's own count */
+    const pc = P.cloudflare && P.cloudflare.date === dayOf(now) ? P.cloudflare : null;
+    const ownReq = t.joins + t.beacons + t.config_hits + t.reports + t.admin_calls + t.health_ok + t.health_fail;
+    const val = (k, fallback) => (pc && pc[k] != null ? pc[k] : fallback);
+    const items = [
+      { k: 'workers', name: 'requests', used: val('workerRequests', ownReq), limit: CF_FREE.workerRequests, unit: 'n' },
+      { k: 'rooms', name: 'room requests', used: pc && pc.doRequests != null ? pc.doRequests + (pc.wsIn || 0) / 20 : t.ws_msgs / 20 + t.joins, limit: CF_FREE.doRequests, unit: 'n' },
+      { k: 'time', name: 'room running time', used: val('doGBs', null), limit: CF_FREE.doGBs, unit: 'GB-s' },
+      { k: 'writes', name: 'storage writes', used: val('rowsWritten', null), limit: CF_FREE.rowsWritten, unit: 'n' },
+      { k: 'storage', name: 'storage', used: val('storedBytes', this.ctx.storage.sql.databaseSize), limit: CF_FREE.storageBytes, unit: 'bytes', total: true }
+    ].map(c => ({ ...c, pct: c.used == null ? 0 : c.used / c.limit }));
     return {
-      vercel: { used: vercelBytes, limit: VERCEL_FREE_BYTES, pct: vercelBytes / VERCEL_FREE_BYTES, resets: Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1) },
-      cloudflare: { used: Math.round(cfToday), limit: CF_FREE_REQUESTS, pct: cfToday / CF_FREE_REQUESTS, resets: dayStart + DAY },
-      storage: { used: this.ctx.storage.sql.databaseSize, limit: 1024 ** 3, pct: this.ctx.storage.sql.databaseSize / 1024 ** 3 }
+      vercel,
+      cloudflare: { connected: !!pc, error: P.cloudflareError || '', notes: pc ? pc.notes : [], at: pc ? pc.at : null, source: pc ? 'Cloudflare' : 'HexTV count', items, resets: dayStart + DAY }
     };
   }
 

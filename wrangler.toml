@@ -27,4 +27,9 @@ crons = ["*/15 * * * *"]
 API_BASE = "https://streamtogether-pi.vercel.app"
 # SHA-256 of the dashboard password (the password itself is in dashboard-password.txt, not in git)
 DASHBOARD_PASSWORD_SHA256 = "737cf29528ecfdbb706ae76b84cdf35263c3241f1a86315ae83f9059587fe1cf"
+# Usage on the dashboard: read with read-only tokens set as secrets
+#   npx wrangler secret put VERCEL_TOKEN   (vercel.com/account/settings/tokens, scope: this team)
+#   npx wrangler secret put CF_API_TOKEN   (Cloudflare API token with "Account Analytics: Read")
+VERCEL_TEAM_ID = "team_6RzHwdguoZ0XkpnW3H62tNN5"
+CF_ACCOUNT_ID = "ae9225caeae588bc224f90dddd5062cf"
 # Telegram alerts: set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID with `npx wrangler secret put`

@@ -139,6 +139,7 @@ export default {
         return json(await (await statsCall(env, '/settings', body)).json());
       }
       if (path === '/admin/test-alert') return json(await (await statsCall(env, '/test-alert', {})).json());
+      if (path === '/admin/refresh-usage') return json(await (await statsCall(env, '/refresh-usage', {})).json());
       const room = clean((body && body.room) || url.searchParams.get('room'), 64);
       if (room && path.startsWith('/admin/room/')) {
         const action = path.slice('/admin/room/'.length);
