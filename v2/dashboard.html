@@ -1191,7 +1191,8 @@ body.still .tbl tbody tr, body.still .alert-row, body.still .split span { transi
     $('usageBar').innerHTML = `
       <span class="src"><span class="dot${V.connected ? '' : ' off'}"></span>Vercel: <b>${V.connected ? 'connected' : 'not connected'}</b>${V.error ? ` <span class="chip" title="${esc(V.error)}">last read failed</span>` : ''}</span>
       <span class="src"><span class="dot${F.connected ? '' : ' off'}"></span>Cloudflare: <b>${F.connected ? 'connected' : 'not connected'}</b>${F.error ? ` <span class="chip" title="${esc(F.error)}">last read failed</span>` : ''}</span>
-      <span>Charges beyond the $20 credit this month: <b>${V.onDemandKnown ? usd(V.onDemand) : 'unknown'}</b></span>
+      <span>Vercel Pro · period <b>${dayLbl(V.periodStart)} – ${dayLbl(V.resets)}</b>${V.invoice ? ` · plan invoice <b>${usd(V.invoice.total)} ${V.invoice.due > 0 ? 'unpaid (due ' + usd(V.invoice.due) + ')' : 'paid'}</b>` : ''}</span>
+      <span>Charges beyond the $20 credit this period: <b>${V.onDemandKnown ? usd(V.onDemand) : 'unknown'}</b></span>
       <span>Spending cap: <b>${b ? usd(b.amount) + (b.pause ? ' · pauses at the cap' : ' · does NOT pause') : 'unknown'}</b></span>
       <button class="btn" id="usageRefresh"><i class="fa-solid fa-rotate"></i> Refresh now</button>`;
     $('usageRefresh').onclick = async () => {
@@ -1200,7 +1201,7 @@ body.still .tbl tbody tr, body.still .alert-row, body.still .split span { transi
 
     const vCards = [
       { k: 'credit', icon: 'fa-wallet', name: 'Monthly credit', used: usd(V.creditUsed), limit: '$20 credit', p: V.creditPct,
-        meta: `Movie traffic ${usd(V.cost.fot)} · servers ${usd(V.cost.cpu + V.cost.memory)}${V.cost.fdt + V.cost.requests > 0 ? ` · pages ${usd(V.cost.fdt + V.cost.requests)}` : ''} · resets ${dayLbl(V.resets)}`, src: vSrc, est: true },
+        meta: `Movie traffic ${usd(V.cost.fot)} · servers ${usd(V.cost.cpu + V.cost.memory)}${V.cost.fdt + V.cost.requests > 0 ? ` · pages ${usd(V.cost.fdt + V.cost.requests)}` : ''} · this period since ${dayLbl(V.periodStart)}, resets ${dayLbl(V.resets)}`, src: vSrc, est: true },
       { k: 'fot', icon: 'fa-film', name: 'Movie traffic', used: gb(V.fot), limit: `${gb(V.creditGB)} (what $20 buys at $${V.prices.fotPerGB}/GB)`, p: V.fot / V.creditGB,
         meta: `Last 24 hours: ${gb(V.fot24h)} ≈ ${usd(V.perDay)}/day${V.daysLeft != null ? (V.daysLeft <= 0 ? ' · credit used up' : V.daysLeft > 60 ? ' · at this pace the credit lasts more than 2 months' : ` · credit lasts ~${V.daysLeft.toFixed(1)} more days at this pace`) : ''}`, src: vSrc, est: !V.connected },
       { k: 'spend', icon: 'fa-credit-card', name: 'Charges beyond credit', used: V.onDemandKnown ? usd(V.onDemand) : '—', limit: b ? `${usd(b.amount)} cap` : 'cap unknown', p: b && b.amount ? V.onDemand / b.amount : 0,
