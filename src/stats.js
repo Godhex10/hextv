@@ -341,15 +341,18 @@ export class Stats extends DurableObject {
     const headers = { Authorization: 'Bearer ' + this.env.VERCEL_TOKEN, 'Content-Type': 'application/json' };
     const call = async (path, init = {}) => {
       const r = await fetch('https://api.vercel.com' + path + (path.includes('?') ? '&' : '?') + 'teamId=' + team, { ...init, headers });
-      if (!r.ok) throw new Error(`Vercel answered ${r.status} for ${path.split('?')[0]}`);
+      if (!r.ok) throw new Error(`Vercel answered ${r.status} for ${path.split('?')[0]}: ${(await r.text()).slice(0, 400)}`);
       return r.json();
     };
     const now = new Date();
     const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
     const dayAgo = new Date(now.getTime() - DAY);
     // The same query the Vercel CLI's `vercel metrics` sends (team-wide)
+    // Vercel wants the range on whole buckets: start rounded down, end rounded up (as the CLI does)
     const metric = async (name, aggregation, start, bucket) => {
-      const body = { scope: { ownerId: team }, timeRange: { start: start.toISOString(), end: now.toISOString() }, bucketSeconds: bucket,
+      const ms = bucket * 1000;
+      const from = new Date(Math.floor(start.getTime() / ms) * ms), to = new Date(Math.ceil(now.getTime() / ms) * ms);
+      const body = { scope: { ownerId: team }, timeRange: { start: from.toISOString(), end: to.toISOString() }, bucketSeconds: bucket,
         metrics: { value: { metric: name, aggregation } }, outputs: ['value'] };
       const r = await call('/metrics/v1', { method: 'POST', body: JSON.stringify(body) });
       return Number((r.summary && r.summary[0] && r.summary[0].values && r.summary[0].values.value) || 0);
@@ -395,8 +398,13 @@ export class Stats extends DurableObject {
       out.doGBs = sum(g, 'activeTime') / 1e6 * 0.125; out.wsIn = sum(g, 'inboundWebsocketMsgCount'); } catch (e) { out.notes.push('room time: ' + e.message); }
     try { const a = await gql('durableObjectsPeriodicGroups(limit: 1000, filter: { date: $d }) { sum { rowsRead rowsWritten } }'); const g = a.durableObjectsPeriodicGroups;
       out.rowsRead = sum(g, 'rowsRead'); out.rowsWritten = sum(g, 'rowsWritten'); } catch (e) { out.notes.push('rows: ' + e.message); }
-    try { const a = await gql('durableObjectsStorageGroups(limit: 1, filter: { date: $d }) { max { storedBytes } }'); const g = a.durableObjectsStorageGroups;
-      out.storedBytes = Number((g && g[0] && g[0].max && g[0].max.storedBytes) || 0); } catch (e) { out.notes.push('storage: ' + e.message); }
+    // Storage: SQLite-backed objects (what HexTV uses) report in their own dataset
+    out.storedBytes = 0;
+    for (const ds of ['durableObjectsSqlStorageGroups', 'durableObjectsStorageGroups']) {
+      try { const a = await gql(`${ds}(limit: 1, filter: { date: $d }) { max { storedBytes } }`); const g = a[ds];
+        out.storedBytes = Math.max(out.storedBytes, Number((g && g[0] && g[0].max && g[0].max.storedBytes) || 0)); } catch (e) { out.notes.push(ds + ': ' + e.message); }
+    }
+    if (!out.storedBytes) { out.storedBytes = null; out.notes.push('storage not reported by Cloudflare yet'); }
     return out;
   }
 
