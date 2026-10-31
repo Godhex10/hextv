@@ -345,7 +345,25 @@ export class Stats extends DurableObject {
       return r.json();
     };
     const now = new Date();
-    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    // The billing period (the $20 credit runs per period) and the plan invoice, from Vercel's invoices
+    let periodStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1), periodEnd = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1), periodFrom = 'calendar month';
+    let invoice = null;
+    try {
+      const raw = await call('/v1/invoices?limit=10');
+      const inv = raw.data || raw.invoices || [];   // the raw API lists them under "data" 
+      for (const i of inv) {
+        const pro = (i.lineItems || []).find(l => /^pro$/i.test(l.description || '') || l.billableItem === 'pro');
+        if (!pro || !pro.periodStart || !pro.periodEnd) continue;
+        const ps = Date.parse(pro.periodStart), pe = Date.parse(pro.periodEnd);
+        if (ps <= now.getTime() && now.getTime() < pe) {
+          periodStart = ps; periodEnd = pe; periodFrom = 'Vercel invoice';
+          invoice = { number: i.invoiceNumber, status: i.status || (Number(i.amountRemaining) > 0 ? 'open' : 'paid'), total: Number(i.total ?? i.amountDue ?? 0),
+            due: Number(i.amountRemaining ?? i.amountDue ?? 0), paid: Number(i.amountPaid ?? 0) };
+          break;
+        }
+      }
+    } catch (e) { periodFrom = 'calendar month (invoices unavailable: ' + String((e && e.message) || e).slice(0, 120) + ')'; }
+    const monthStart = new Date(periodStart);
     const dayAgo = new Date(now.getTime() - DAY);
     // The same query the Vercel CLI's `vercel metrics` sends (team-wide)
     // Vercel wants the range on whole buckets: start rounded down, end rounded up (as the CLI does)
@@ -375,7 +393,7 @@ export class Stats extends DurableObject {
       const t = list.find(x => x.scope === 'team') || list[0];
       if (t) budget = { amount: Number(t.amount), pause: !!t.pause, status: t.status };
     } catch { /* shown as unknown */ }
-    return { fot, fot24h, fdt, requests, cpuMs, durationMs, memAvgMb, onDemand, budget, monthStart: monthStart.getTime() };
+    return { fot, fot24h, fdt, requests, cpuMs, durationMs, memAvgMb, onDemand, budget, invoice, periodStart, periodEnd, periodFrom };
   }
 
   async cloudflareUsage() {
@@ -419,7 +437,7 @@ export class Stats extends DurableObject {
     const t = this.sumSince(dayStart, ['joins', 'beacons', 'config_hits', 'reports', 'ws_msgs', 'admin_calls', 'health_ok', 'health_fail']);
 
     /* Vercel: real usage when connected (and from this month), otherwise HexTV's estimate of the relay */
-    const pv = P.vercel && P.vercel.monthStart === monthStart ? P.vercel : null;
+    const pv = P.vercel && P.vercel.periodEnd > now ? P.vercel : null;   // still inside its billing period
     const fot = pv ? pv.fot : own.relay_bytes, fot24h = pv ? pv.fot24h : own24.relay_bytes;
     const cpuH = pv ? pv.cpuMs / 3.6e6 : 0, memGBh = pv ? (pv.memAvgMb / 1024) * (pv.durationMs / 3.6e6) : 0;
     const fdt = pv ? pv.fdt : null, requests = pv ? pv.requests : null;
@@ -435,7 +453,8 @@ export class Stats extends DurableObject {
       fot, fot24h, fdt, requests, cpuH, memGBh, cost, creditUsed, credit: VERCEL_PRO.credit, creditPct: creditUsed / VERCEL_PRO.credit,
       creditGB: VERCEL_PRO.credit / VERCEL_PRO.fotPerGB * GB, perDay, daysLeft: perDay > 0 ? (VERCEL_PRO.credit - creditUsed) / perDay : null,
       onDemand: pv && pv.onDemand != null ? pv.onDemand : 0, onDemandKnown: !!(pv && pv.onDemand != null), budget: pv ? pv.budget : null,
-      prices: VERCEL_PRO, resets: monthEnd
+      prices: VERCEL_PRO, resets: pv ? pv.periodEnd : monthEnd, periodStart: pv ? pv.periodStart : monthStart, periodFrom: pv ? pv.periodFrom : 'calendar month (estimate)',
+      invoice: pv ? pv.invoice : null
     };
 
     /* Cloudflare: today's real numbers when connected, otherwise HexTV's own count */
