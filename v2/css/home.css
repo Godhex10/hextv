@@ -263,3 +263,19 @@ footer { position: relative; overflow: hidden; padding: 3.5rem clamp(1.25rem, 4v
   .email-input { padding: 0.7rem 0.9rem; }
   .scroll-cue { display: none; }
 }
+
+/* ── Hero: apps coming soon ─────────────────────── */
+.app-soon { margin: 22px 0 6px; }
+.app-soon-label { display: flex; justify-content: center; align-items: center; gap: 10px; font-size: .72rem; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+.app-soon-label::before, .app-soon-label::after { content: ''; height: 1px; width: 26px; background: rgba(255, 255, 255, .18); }
+.app-badges { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
+.app-badge { position: relative; display: inline-flex; align-items: center; gap: 12px; padding: 10px 18px 10px 14px; border-radius: 14px; color: #fff;
+  background: rgba(255, 255, 255, .06); border: 1px solid rgba(255, 255, 255, .14); backdrop-filter: blur(10px); cursor: default; }
+.app-badge i { font-size: 1.55rem; width: 28px; text-align: center; }
+.app-badge .fa-windows { color: #4cc2ff; }
+.app-badge .fa-android { color: #3ddc84; }
+.app-badge small { display: block; font-size: .64rem; color: var(--muted); letter-spacing: .04em; line-height: 1.2; }
+.app-badge b { display: block; font-size: .98rem; font-weight: 700; line-height: 1.2; }
+.app-badge .soon { position: absolute; top: -9px; right: -8px; font-size: .58rem; font-weight: 800; letter-spacing: .12em; padding: 3px 8px; border-radius: 99px;
+  background: var(--grad-red); box-shadow: 0 6px 16px -6px rgba(229, 9, 20, .9); }
+@media (max-width: 640px) { .app-badge { padding: 9px 14px 9px 12px; } .app-badge b { font-size: .9rem; } }
