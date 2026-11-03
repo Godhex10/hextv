@@ -866,7 +866,8 @@ async function resolveLibraryTitle(media, token) {
   renderSubtitleMenu();
   loadSubtitles(media, q, token);   // in parallel; the video never waits for subtitles
   try {
-    const res = await MB.get(`/api/stream/${encodeURIComponent(media.mb)}${q}`);
+    // The apps play straight from the CDN, so they still get links while the website's relay is paused
+    const res = await MB.get(`/api/stream/${encodeURIComponent(media.mb)}${q}${window.HexNative ? '&direct=1' : ''}`);
     if (token !== mediaToken) return;
     mediaStreams = MB.rankStreams(res.streams);
     if (!mediaStreams.length) throw new Error('No playable version of this title was found.');
