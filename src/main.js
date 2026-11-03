@@ -143,8 +143,8 @@ function createWindow(firstUrl) {
   wc.on('dom-ready', () => {
     if (!isSite(wc.getURL())) return;
     wc.insertCSS(`.top-links a[href="index.html"] { display: none !important; }
-      a.create-room.hx-create { width: auto !important; padding: 0 14px 0 12px; gap: 7px; display: inline-flex !important; align-items: center;
-        border-radius: 999px; color: #fff !important; font-weight: 600; font-size: 13px; text-decoration: none;
+      a.create-room.hx-create { width: auto !important; padding: 0 11px 0 9px; gap: 5px; display: inline-flex !important; align-items: center;
+        border-radius: 999px; color: #fff !important; font-weight: 600; font-size: 11.5px; text-decoration: none;
         background: linear-gradient(135deg, #ff2d3a 0%, #e50914 45%, #b20710 100%); border-color: transparent !important;
         box-shadow: 0 6px 18px -8px rgba(229,9,20,.8); }`);
   });
