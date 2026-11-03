@@ -89,7 +89,7 @@
     // Anonymous stats id and web/app, so the dashboard can count viewers (see telemetry.js)
     try { url.searchParams.set('vid', localStorage.getItem('hx_vid') || ''); } catch (e) { /* private mode */ }
     url.searchParams.set('platform', window.HexDesktop ? 'windows'
-      : window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() ? 'app' : 'web');
+      : window.HexAndroid || (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) ? 'app' : 'web');
     const ws = new WebSocket(url.toString());
     this._ws = ws;
 

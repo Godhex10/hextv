@@ -4,6 +4,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="js/inapp.js"></script>
 <title>HexTV — Watch Party</title>
 <link rel="icon" href="img/hextv-h.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="img/hextv-icon-180.png">
@@ -1909,7 +1910,17 @@ if (chatBackdrop) chatBackdrop.addEventListener('click', closeMobileChat);
     SHARE MODAL
 ══════════════════════════════════════════════ */
 const shareModal = document.getElementById('shareModal');
-document.getElementById('shareBtn').addEventListener('click', () => shareModal.classList.add('open'));
+// In the Android app, Invite opens Android's share menu (the link shows as a poster card in chats)
+document.getElementById('shareBtn').addEventListener('click', () => {
+  const Share = window.HexAndroid && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Share;
+  if (Share) {
+    const title = document.getElementById('roomNameDisplay').textContent.trim();
+    Share.share({ title: 'Join my watch party', text: `Join my watch party on HexTV${title ? ': ' + title : ''}`, url: inviteLink(), dialogTitle: 'Invite friends' })
+      .catch(() => shareModal.classList.add('open'));
+    return;
+  }
+  shareModal.classList.add('open');
+});
 document.getElementById('closeModalBtn').addEventListener('click', () => shareModal.classList.remove('open'));
 shareModal.addEventListener('click', e => { if (e.target === shareModal) shareModal.classList.remove('open'); });
 document.getElementById('copyLinkBtn').addEventListener('click', () => {

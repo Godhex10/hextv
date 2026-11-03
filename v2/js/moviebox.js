@@ -21,7 +21,7 @@
 
   // Browsers can't send the Referer/Origin the video CDN insists on, so MP4s go through the API relay.
   // The Windows app can send them itself and plays straight from the CDN, unless that failed once.
-  const desktop = window.HexDesktop;
+  const desktop = window.HexNative || window.HexDesktop;   // the Windows or Android app (js/inapp.js)
   let directOff = false;
   function proxied(stream) {
     if (desktop && !directOff && stream.headers && desktop.allowMedia(stream.url, stream.headers)) return stream.url;

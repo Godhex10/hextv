@@ -192,3 +192,6 @@ a { color: inherit; }
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
   .reveal { opacity: 1; transform: none; }
 }
+
+/* ── Inside the Windows/Android apps (js/inapp.js): no website home page ── */
+.in-app .top-links a[href="index.html"] { display: none !important; }

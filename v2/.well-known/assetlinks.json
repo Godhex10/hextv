@@ -1,0 +1,5 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": { "namespace": "android_app", "package_name": "com.godhex.watchparty",
+    "sha256_cert_fingerprints": ["5C:6D:53:CE:20:25:42:A1:88:3D:1A:90:C2:01:64:97:8F:96:4D:28:E7:7D:16:56:4E:D0:6C:B9:DC:5A:38:93"] }
+}]
