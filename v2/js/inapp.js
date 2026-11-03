@@ -10,6 +10,8 @@
     try { version = android.version(); } catch (e) { /* older app */ }
     window.HexNative = {
       platform: 'android', version,
+      // Real fullscreen: the phone turns sideways (keyboard included) and the system bars hide
+      fullscreen: on => { try { android.fullscreen(!!on); return true; } catch (e) { return false; } },
       // Returns true when the app will add the CDN's headers, so the page can skip the relay
       allowMedia: (url, headers) => { try { return android.allowMedia(String(url), JSON.stringify(headers || {})); } catch (e) { return false; } }
     };

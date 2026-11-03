@@ -720,6 +720,12 @@ function rotateOnPhones() {
 
 async function toggleFullscreen() {
   if (document.fullscreenElement) return document.exitFullscreen();
+  // The Android app turns the phone itself, so the keyboard and chat follow the landscape view
+  const native = window.HexNative && window.HexNative.fullscreen;
+  if (native) {
+    const on = !document.body.classList.contains('fs');
+    if (native(on)) return setFullscreenLook(on);
+  }
   if (document.body.classList.contains('fs')) return setFullscreenLook(false);   // the CSS-only kind
   const root = document.documentElement;
   if (root.requestFullscreen) {
