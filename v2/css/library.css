@@ -310,3 +310,9 @@ body { font-size: 14px; overflow-x: hidden; }
 .detail-list.on { border-color: rgba(255, 45, 58, 0.5); }
 .detail-list.on i { color: var(--red-hot); }
 @media (max-width: 640px) { .detail-list span { display: none; } .detail-list { padding: 0 0.9rem; } }
+
+/* ── In the Windows/Android apps the "+" becomes a labelled Create Room pill (the app adds .hx-create);
+      kept compact so it doesn't compete with the logo and search ── */
+html body a.create-room.hx-create { height: 30px !important; padding: 0 11px 0 9px !important; gap: 5px !important; border-radius: 999px !important;
+  font-size: 11.5px !important; font-weight: 600 !important; box-shadow: 0 3px 10px -6px rgba(229, 9, 20, 0.7) !important; }
+html body a.create-room.hx-create i { font-size: 10px; }
