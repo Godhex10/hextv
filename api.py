@@ -1184,8 +1184,15 @@ def get_detail(subject_id: str):
 def get_episodes(subject_id: str):
     return {"subject_id": subject_id, "seasons": engine.get_episodes(subject_id)}
 
+# Movies on the website switched off to save Vercel credit (set RELAY_PAUSED=0 to switch back on).
+# The Windows/Android apps play straight from the CDN without the relay, so they keep working (?direct=1).
+RELAY_PAUSED = os.environ.get("RELAY_PAUSED", "1" if os.environ.get("VERCEL") else "0") == "1"
+RELAY_PAUSED_MESSAGE = "Movies are paused on the website for now, try again soon."
+
 @app.get("/api/stream/{subject_id}")
-def get_streams(subject_id: str, se: int = 0, ep: int = 0, detail_path: Optional[str] = None):
+def get_streams(subject_id: str, se: int = 0, ep: int = 0, detail_path: Optional[str] = None, direct: int = 0):
+    if RELAY_PAUSED and not direct:
+        raise HTTPException(status_code=503, detail=RELAY_PAUSED_MESSAGE)
     streams = engine.get_streams(subject_id, season=se, episode=ep, detail_path=detail_path)
     # Copies, so the cached entries never carry a token that later expires
     signed = [{**st, "proxy_token": sign_media(st["url"])} for st in streams]
@@ -1261,6 +1268,8 @@ async def proxy_stream(request: Request, url: str, h: Optional[str] = None, exp:
     host = (parts.hostname or "").lower()
     if parts.scheme not in ("http", "https") or not any(host == s or host.endswith("." + s) for s in PROXY_HOST_SUFFIXES):
         raise HTTPException(status_code=400, detail="Host not allowed")
+    if RELAY_PAUSED:
+        raise HTTPException(status_code=503, detail=RELAY_PAUSED_MESSAGE)
     refused = _proxy_allowed(request, url, exp, sig)
     if refused:
         raise HTTPException(status_code=403, detail=refused)
