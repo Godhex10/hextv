@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">HexTV</string>
+    <string name="title_activity_main">HexTV</string>
+    <string name="package_name">com.godhex.watchparty</string>
+    <string name="custom_url_scheme">com.godhex.watchparty</string>
+</resources>

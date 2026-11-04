@@ -1,0 +1,21 @@
+{
+  "name": "hextv-android",
+  "version": "1.0.0",
+  "private": true,
+  "description": "HexTV for Android: the live HexTV site in an app, with direct playback, autoplay sound and Android sharing",
+  "scripts": {
+    "sync": "cap sync android",
+    "build": "cap sync android && cd android && gradlew.bat assembleRelease"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/core": "^8.6.0",
+    "@capacitor/share": "^8.0.3",
+    "@capacitor/splash-screen": "^8.0.2",
+    "@capacitor/status-bar": "^8.0.4"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.6.0"
+  }
+}
