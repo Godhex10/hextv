@@ -1,0 +1,32 @@
+{
+  "appId": "com.godhex.watchparty",
+  "appName": "HexTV",
+  "webDir": "www",
+  "server": {
+    "url": "https://streamtogether-pi.vercel.app/app-start.html",
+    "allowNavigation": [
+      "streamtogether-pi.vercel.app"
+    ],
+    "errorPath": "offline.html"
+  },
+  "android": {
+    "backgroundColor": "#050507"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 5000,
+      "launchAutoHide": true,
+      "backgroundColor": "#050507",
+      "showSpinner": false,
+      "launchFadeOutDuration": 150
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#050507",
+      "overlaysWebView": false
+    },
+    "SystemBars": {
+      "style": "DARK"
+    }
+  }
+}
