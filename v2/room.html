@@ -24,6 +24,20 @@
 </head>
 <body data-cursor="off">
 
+<!-- On a Windows browser: hand the room over to the HexTV app (see WINDOWS APP in the script) -->
+<div class="app-handoff" id="appHandoff" hidden role="dialog" aria-labelledby="handoffTitle">
+  <div class="handoff-card">
+    <img class="handoff-logo" src="img/hextv-h.svg" alt="">
+    <h2 id="handoffTitle"></h2>
+    <p id="handoffText"></p>
+    <div class="handoff-actions">
+      <button class="handoff-btn primary" id="handoffApp"><i class="fa-brands fa-windows"></i> <span>Open in the HexTV app</span></button>
+      <button class="handoff-btn" id="handoffWeb"><i class="fa-solid fa-globe"></i> <span>Watch in the browser</span></button>
+    </div>
+    <small id="handoffHint" hidden></small>
+  </div>
+</div>
+
 <div class="topbar">
   <a class="logo-sm brand" href="index.html" aria-label="HexTV" title="HexTV">
     <span class="brand-mark"></span>
@@ -482,7 +496,10 @@ function leaveForOtherTab(message) {
   updateSyncStatus(false);
 }
 // Coming back to this tab: reopen it here, which steps the other tab out
-document.getElementById('mediaHere').addEventListener('click', () => location.reload());
+document.getElementById('mediaHere').addEventListener('click', () => {
+  try { sessionStorage.setItem('hx_here', '1'); } catch (e) { /* storage blocked */ }   // stay in this browser (WINDOWS APP)
+  location.reload();
+});
 
 // Enters presence the first time, updates our name/colour after that
 function publishPresence() {
@@ -2127,16 +2144,81 @@ document.getElementById('syncOverlay').addEventListener('keydown', e => {
 });
 
 /* ══════════════════════════════════════════════
-    WINDOWS APP — on a Windows browser, offer to open this room in the installed app
+    WINDOWS APP — Windows only lets Store apps take over website links, so a room link opened
+    in a Windows browser hands itself to the installed app instead (hextv://room?…). The first
+    time it asks; after "Open in the HexTV app" (and the browser's "Always allow") every link
+    goes straight to the app, and this tab stays out of the room so nobody shows up twice.
 ══════════════════════════════════════════════ */
-(function () {
-  const btn = document.getElementById('openAppBtn');
-  if (window.HexDesktop || !/Windows NT/.test(navigator.userAgent)) return;
-  btn.hidden = false;
-  btn.addEventListener('click', () => {
-    // hextv://room?room=…&mb=… — the app opens the same room (nothing happens if it isn't installed)
-    location.href = 'hextv://room' + location.search;
-  });
+const appHandoff = (function () {
+  const onWindowsBrowser = !window.HexDesktop && /Windows NT/.test(navigator.userAgent);
+  const KEY = 'hx_open_with';   // 'app' or 'web', this browser's choice
+  const get = () => { try { return localStorage.getItem(KEY); } catch (e) { return null; } };
+  const set = v => { try { localStorage.setItem(KEY, v); } catch (e) { /* storage blocked */ } };
+  // "Watch here instead" reloads the tab: this flag keeps that reload in the browser
+  const hereOnce = () => { try { const v = sessionStorage.getItem('hx_here') === '1'; sessionStorage.removeItem('hx_here'); return v; } catch (e) { return false; } };
+  const el = document.getElementById('appHandoff');
+  const $h = id => document.getElementById(id);
+  let watchTimer = 0;
+
+  function launch() {
+    location.href = 'hextv://room' + location.search;   // nothing happens if the app isn't installed
+    // The app taking focus blurs this tab; if that hasn't happened in a few seconds, say so
+    clearTimeout(watchTimer);
+    const opened = () => { clearTimeout(watchTimer); $h('handoffHint').hidden = true; };
+    window.addEventListener('blur', opened, { once: true });
+    watchTimer = setTimeout(() => {
+      window.removeEventListener('blur', opened);
+      $h('handoffHint').textContent = "Didn't open? The HexTV app may not be installed on this PC — watch here instead.";
+      $h('handoffHint').hidden = false;
+    }, 5000);
+  }
+
+  function show(state, onWeb) {
+    el.hidden = false;
+    $h('handoffHint').hidden = true;
+    const asking = state === 'ask';
+    $h('handoffTitle').textContent = asking ? 'Watch in the HexTV app?' : 'Opened in the HexTV app';
+    $h('handoffText').textContent = asking
+      ? 'Movies start straight away in the app and stay in sync with everyone.'
+      : 'If your browser asks to open HexTV, tick "Always allow" — next time links go straight to the app.';
+    $h('handoffApp').querySelector('span').textContent = asking ? 'Open in the HexTV app' : 'Open the app again';
+    $h('handoffWeb').querySelector('span').textContent = asking ? 'Watch in the browser' : 'Watch here instead';
+    $h('handoffApp').onclick = () => { set('app'); launch(); show('opened', onWeb); };
+    $h('handoffWeb').onclick = () => {
+      if (asking) set('web');
+      clearTimeout(watchTimer);
+      el.hidden = true;
+      onWeb();
+    };
+  }
+
+  // The room's Windows button: open the app now, and step this tab out of the room
+  const btn = $h('openAppBtn');
+  if (onWindowsBrowser) {
+    btn.hidden = false;
+    btn.addEventListener('click', () => {
+      set('app');
+      launch();
+      leaveForOtherTab('Opened in the HexTV app. HexTV plays one room at a time on each device, so this tab stepped out.');
+    });
+  }
+
+  return {
+    // Runs before the room starts: true when this tab handed the room to the app (or is asking)
+    intercept(startRoom) {
+      if (!onWindowsBrowser || hereOnce()) return false;
+      const choice = get();
+      if (choice === 'web') return false;
+      if (choice === 'app') {
+        show('opened', startRoom);
+        // After the page has loaded: leaving for hextv:// mid-load can stop the rest loading
+        if (document.readyState === 'complete') launch();
+        else window.addEventListener('load', () => { if (!el.hidden) launch(); }, { once: true });
+      }
+      else show('ask', startRoom);
+      return true;
+    }
+  };
 })();
 
 /* ══════════════════════════════════════════════
@@ -2219,6 +2301,10 @@ window.addEventListener('pagehide', saveHistory);
 window.addEventListener('DOMContentLoaded', () => {
   renderQualityMenu();
   renderSubtitleMenu();
+  if (!appHandoff.intercept(startRoom)) startRoom();
+});
+
+function startRoom() {
   initAbly();
 
   if (linkMedia) {
@@ -2229,7 +2315,7 @@ window.addEventListener('DOMContentLoaded', () => {
   }
   // If the room service can't be reached at all, still play what the link asked for
   setTimeout(() => { if (!joinedOnce) { joinedOnce = true; startAlone(); } }, 8000);
-});
+}
 </script>
 <script src="js/ui.js"></script>
 <script>

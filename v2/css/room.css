@@ -497,3 +497,21 @@ body.guest-locked .up-next-cancel, body.guest-noload .up-next-play { display: no
 .audio-note > i { color: var(--red-hot); margin-top: 2px; }
 .audio-note span { flex: 1; }
 .audio-note button { border: none; background: none; color: #9a9aa8; cursor: pointer; font-size: 0.85rem; padding: 0 2px; }
+
+/* ── Windows browser → HexTV app hand-off ── */
+.app-handoff { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 16px;
+  background: radial-gradient(60% 45% at 50% 40%, rgba(229, 9, 20, 0.18), transparent 70%), rgba(5, 5, 7, 0.96); }
+.app-handoff[hidden] { display: none; }
+.handoff-card { width: min(420px, 100%); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 0.7rem; }
+.handoff-logo { width: 64px; height: 64px; filter: drop-shadow(0 0 24px rgba(229, 9, 20, 0.55)); margin-bottom: 0.3rem; }
+.handoff-card h2 { font-family: var(--font-display); font-weight: 400; font-size: 2rem; letter-spacing: 0.04em; line-height: 1; }
+.handoff-card p { color: rgba(255, 255, 255, 0.72); font-size: 0.9rem; line-height: 1.55; max-width: 340px; }
+.handoff-actions { display: flex; flex-direction: column; gap: 0.6rem; width: 100%; max-width: 300px; margin-top: 0.6rem; }
+.handoff-btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.55rem; padding: 0.85rem 1.2rem; border-radius: 999px;
+  font-family: inherit; font-weight: 600; font-size: 0.92rem; color: #fff; cursor: pointer; border: 1px solid rgba(255, 255, 255, 0.16); background: rgba(255, 255, 255, 0.06);
+  transition: transform 0.15s ease, background 0.15s ease; }
+.handoff-btn:hover { background: rgba(255, 255, 255, 0.12); }
+.handoff-btn:active { transform: scale(0.97); }
+.handoff-btn.primary { border-color: transparent; background: linear-gradient(135deg, #ff2d3a 0%, #e50914 45%, #b20710 100%); box-shadow: 0 8px 28px rgba(229, 9, 20, 0.35); }
+.handoff-btn.primary:hover { filter: brightness(1.08); }
+.handoff-card small { color: #ffb4b4; font-size: 0.8rem; line-height: 1.5; max-width: 320px; }
