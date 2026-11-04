@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<script src="js/inapp.js"></script>
+<meta name="theme-color" content="#050507">
+<title>HexTV — Watch Movies With Friends</title>
+<link rel="icon" href="img/hextv-h.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="img/hextv-icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css" integrity="sha512-2SwdPD6INVrV/lHTZbO2nodKhrnDdJK9/kg2XD1r9uGqPo1cUbujc+IYdlYdEErWNu69gVcYgdxlmVmzTWnetw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/home.css">
+</head>
+<body class="is-loading">
+
+<!-- PRELOADER -->
+<div class="preloader" id="preloader" aria-hidden="true">
+  <div class="pl-logo">
+    <span class="pl-halo"></span>
+    <span class="pl-mark"></span>
+  </div>
+  <div class="pl-name">Hex<span>TV</span></div>
+  <div class="pl-line"><span id="plBar"></span></div>
+</div>
+
+<!-- NAV -->
+<nav id="navbar" data-nav>
+  <a class="brand" href="index.html" aria-label="HexTV" title="HexTV"><span class="brand-mark"></span></a>
+  <div class="nav-links">
+    <a href="library.html">Library</a>
+    <a href="#how">How it works</a>
+    <a href="how-to.html">Guide</a>
+  </div>
+  <div class="nav-right">
+    <a href="./room.html" class="btn btn-primary btn-sm magnetic"><i class="fa-solid fa-plus"></i> Create Room</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-bg" aria-hidden="true">
+    <div class="hero-wall" id="heroGrid"></div>
+    <div class="hero-vignette"></div>
+    <div class="hero-flare"></div>
+  </div>
+
+  <div class="hero-content">
+    <span class="hero-eyebrow"><span class="pulse-dot"></span><i class="fa-solid fa-video"></i> Real-Time Watch Parties</span>
+    <h1>
+      <span class="ln"><span>Watch Movies</span></span>
+      <span class="ln"><span><em>Together.</em></span></span>
+    </h1>
+    <p class="hero-sub">Invite friends, sync playback instantly, and chat in real time — no matter where everyone is in the world.</p>
+    <div class="hero-cta">
+      <a href="library.html" class="btn btn-primary btn-lg magnetic"><i class="fa-solid fa-play"></i> Explore Movie Library</a>
+      <a href="#how" class="btn btn-glass btn-lg magnetic">How it Works</a>
+    </div>
+    <div class="app-soon">
+      <div class="app-soon-label">Apps coming soon</div>
+      <div class="app-badges">
+        <span class="app-badge"><i class="fa-brands fa-windows"></i><span><small>Download for</small><b>Windows</b></span><span class="soon">SOON</span></span>
+        <span class="app-badge"><i class="fa-brands fa-android"></i><span><small>Get the APK for</small><b>Android</b></span><span class="soon">SOON</span></span>
+      </div>
+    </div>
+    <div class="hero-stats">
+      <div class="stat"><div class="stat-num" data-count="12000" data-div="1000" data-suffix="K+">0K+</div><div class="stat-label">Watch Parties</div></div>
+      <div class="stat"><div class="stat-num" data-count="50000" data-div="1000" data-suffix="K+">0K+</div><div class="stat-label">Viewers</div></div>
+      <div class="stat"><div class="stat-num"><span data-count="49" data-div="10" data-dec="1">0.0</span><i class="fa-solid fa-star stat-star"></i></div><div class="stat-label">Rating</div></div>
+    </div>
+  </div>
+
+  <a class="scroll-cue" href="#how" aria-label="Scroll to how it works"><span></span></a>
+</section>
+
+<!-- GENRE MARQUEE -->
+<div class="marquee" aria-hidden="true">
+  <div class="marquee-track">
+    <span>Drama</span><i class="fa-solid fa-diamond"></i><span>Comedy</span><i class="fa-solid fa-diamond"></i><span>Horror</span><i class="fa-solid fa-diamond"></i><span>Sci-Fi</span><i class="fa-solid fa-diamond"></i><span>Action</span><i class="fa-solid fa-diamond"></i><span>Romance</span><i class="fa-solid fa-diamond"></i><span>Thriller</span><i class="fa-solid fa-diamond"></i><span>Classic</span><i class="fa-solid fa-diamond"></i>
+    <span>Drama</span><i class="fa-solid fa-diamond"></i><span>Comedy</span><i class="fa-solid fa-diamond"></i><span>Horror</span><i class="fa-solid fa-diamond"></i><span>Sci-Fi</span><i class="fa-solid fa-diamond"></i><span>Action</span><i class="fa-solid fa-diamond"></i><span>Romance</span><i class="fa-solid fa-diamond"></i><span>Thriller</span><i class="fa-solid fa-diamond"></i><span>Classic</span><i class="fa-solid fa-diamond"></i>
+  </div>
+</div>
+
+<!-- HOW IT WORKS -->
+<section id="how" class="section">
+  <div class="section-head">
+    <div class="section-label kicker reveal">Simple as 1-2-3</div>
+    <h2 class="section-title reveal" style="--d:.05s">How HexTV Works</h2>
+    <p class="section-sub reveal" style="--d:.1s">No downloads. No sign-ups required. Just paste a link and watch with friends in seconds.</p>
+  </div>
+  <div class="steps-grid">
+    <div class="step-card reveal tilt" style="--d:0s">
+      <div class="step-num">01</div>
+      <div class="step-icon"><i class="fa-solid fa-link"></i></div>
+      <h3>Paste Your Video Link</h3>
+      <p>Got a direct video URL? Paste it in and we'll load it up. Works with any public .mp4 or video source.</p>
+    </div>
+    <div class="step-card reveal tilt" style="--d:.08s">
+      <div class="step-num">02</div>
+      <div class="step-icon"><i class="fa-solid fa-people-group"></i></div>
+      <h3>Invite Your Friends</h3>
+      <p>Share your unique room link. Friends join instantly — no account needed to watch together.</p>
+    </div>
+    <div class="step-card reveal tilt" style="--d:.16s">
+      <div class="step-num">03</div>
+      <div class="step-icon"><i class="fa-solid fa-play"></i></div>
+      <h3>Press Play Together</h3>
+      <p>Hit play and everyone's video syncs in real time. Pause, seek, rewind — everything stays in sync.</p>
+    </div>
+    <div class="step-card reveal tilt" style="--d:.24s">
+      <div class="step-num">04</div>
+      <div class="step-icon"><i class="fa-regular fa-comment-dots"></i></div>
+      <h3>Chat While You Watch</h3>
+      <p>React, laugh, and discuss the movie in the live chat panel — right next to the video.</p>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section class="features-section section">
+  <div class="features-layout">
+    <div>
+      <div class="section-label kicker reveal">Features</div>
+      <h2 class="section-title reveal" style="--d:.05s">Everything You Need<br>For The Perfect<br><em>Movie Night</em></h2>
+      <div class="feature-list">
+        <div class="feature-item reveal" style="--d:.05s">
+          <div class="feature-icon"><i class="fa-solid fa-bolt"></i></div>
+          <div class="feature-text"><h4>Real-Time Sync</h4><p>Everyone's video stays perfectly in sync — play, pause and seek are shared with the whole room instantly.</p></div>
+        </div>
+        <div class="feature-item reveal" style="--d:.12s">
+          <div class="feature-icon"><i class="fa-regular fa-comments"></i></div>
+          <div class="feature-text"><h4>Live Chat</h4><p>Side-panel chat so you can react to every scene as it happens with your crew.</p></div>
+        </div>
+        <div class="feature-item reveal" style="--d:.19s">
+          <div class="feature-icon"><i class="fa-solid fa-lock"></i></div>
+          <div class="feature-text"><h4>Private Rooms</h4><p>Invite-only rooms with unique links. Only the people you share the link with can join.</p></div>
+        </div>
+        <div class="feature-item reveal" style="--d:.26s">
+          <div class="feature-icon"><i class="fa-solid fa-mobile-screen"></i></div>
+          <div class="feature-text"><h4>Works Everywhere</h4><p>Open in any browser on desktop, tablet, or phone. No app install required.</p></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live mock of a watch party -->
+    <div class="player-mock reveal tilt" style="--d:.1s">
+      <div class="player-screen">
+        <div class="player-poster" id="mockPoster"></div>
+        <div class="player-bars" aria-hidden="true">
+          <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
+          <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
+          <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
+        </div>
+        <div class="player-screen-content">
+          <div class="play-btn-mock" aria-hidden="true"><i class="fa-solid fa-play"></i></div>
+          <div class="now-playing">Now Watching<strong id="mockTitle">The Dark Knight</strong></div>
+        </div>
+        <div class="mock-reacts" id="mockReacts" aria-hidden="true"></div>
+      </div>
+      <div class="viewers-row">
+        <div class="viewer-avatars" aria-label="4 viewers">
+          <div class="v-av" style="background:#e50914">J</div>
+          <div class="v-av" style="background:#1a73e8">A</div>
+          <div class="v-av" style="background:#0f9d58">M</div>
+          <div class="v-av" style="background:#f4b400">K</div>
+        </div>
+        <span class="viewers-text">4 watching</span>
+        <span class="live-dot pulse-dot" aria-hidden="true"></span>
+        <span class="live-label">LIVE</span>
+      </div>
+      <div class="player-controls">
+        <button class="ctrl-btn" aria-label="Play"><i class="fa-solid fa-pause"></i></button>
+        <div class="progress-bar-wrap" role="progressbar" aria-valuenow="38" aria-valuemin="0" aria-valuemax="100"><div class="progress-fill"></div></div>
+        <span class="mock-time" id="mockTime">1:12:45</span>
+      </div>
+      <div class="player-chat" aria-label="Live chat" id="mockChat"></div>
+    </div>
+  </div>
+</section>
+
+<!-- GENRES -->
+<section class="genres-section section">
+  <div class="section-head">
+    <div class="section-label kicker reveal">What to Watch</div>
+    <h2 class="section-title reveal" style="--d:.05s">Pick Your Vibe</h2>
+    <p class="section-sub reveal" style="--d:.1s">Browse by genre — or bring your own video link.</p>
+  </div>
+  <div class="genres-grid">
+    <a href="library.html" class="genre-card reveal tilt" style="--d:0s;--g:#7c3aed"><span class="genre-emoji"><i class="fa-solid fa-masks-theater"></i></span><span class="genre-name">Drama</span><i class="fa-solid fa-arrow-right"></i></a>
+    <a href="library.html" class="genre-card reveal tilt" style="--d:.04s;--g:#f59e0b"><span class="genre-emoji"><i class="fa-solid fa-face-laugh-squint"></i></span><span class="genre-name">Comedy</span><i class="fa-solid fa-arrow-right"></i></a>
+    <a href="library.html" class="genre-card reveal tilt" style="--d:.08s;--g:#16a34a"><span class="genre-emoji"><i class="fa-solid fa-ghost"></i></span><span class="genre-name">Horror</span><i class="fa-solid fa-arrow-right"></i></a>
+    <a href="library.html" class="genre-card reveal tilt" style="--d:.12s;--g:#0ea5e9"><span class="genre-emoji"><i class="fa-solid fa-rocket"></i></span><span class="genre-name">Sci-Fi</span><i class="fa-solid fa-arrow-right"></i></a>
+    <a href="library.html" class="genre-card reveal tilt" style="--d:.16s;--g:#e50914"><span class="genre-emoji"><i class="fa-solid fa-bolt"></i></span><span class="genre-name">Action</span><i class="fa-solid fa-arrow-right"></i></a>
+    <a href="library.html" class="genre-card reveal tilt" style="--d:.2s;--g:#ec4899"><span class="genre-emoji"><i class="fa-solid fa-heart"></i></span><span class="genre-name">Romance</span><i class="fa-solid fa-arrow-right"></i></a>
+    <a href="library.html" class="genre-card reveal tilt" style="--d:.24s;--g:#64748b"><span class="genre-emoji"><i class="fa-solid fa-user-secret"></i></span><span class="genre-name">Thriller</span><i class="fa-solid fa-arrow-right"></i></a>
+    <a href="library.html" class="genre-card reveal tilt" style="--d:.28s;--g:#a16207"><span class="genre-emoji"><i class="fa-solid fa-film"></i></span><span class="genre-name">Classic</span><i class="fa-solid fa-arrow-right"></i></a>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="faq-section section">
+  <div class="faq-inner">
+    <div class="section-head center">
+      <div class="section-label kicker reveal">Got Questions?</div>
+      <h2 class="section-title reveal" style="--d:.05s">Frequently Asked</h2>
+    </div>
+    <div class="faq-list">
+      <div class="faq-item reveal">
+        <button class="faq-q" aria-expanded="false">What videos can I watch on HexTV? <span class="faq-icon"><i class="fa-solid fa-plus"></i></span></button>
+        <div class="faq-a"><div>You can watch any video using a direct video URL (like an .mp4 link). We also have a library of movies and series you can browse.</div></div>
+      </div>
+      <div class="faq-item reveal" style="--d:.05s">
+        <button class="faq-q" aria-expanded="false">Do my friends need to create an account? <span class="faq-icon"><i class="fa-solid fa-plus"></i></span></button>
+        <div class="faq-a"><div>Nope! The host creates a room, and friends can join just by clicking the shared link. No sign-up needed to be a guest in someone else's party.</div></div>
+      </div>
+      <div class="faq-item reveal" style="--d:.1s">
+        <button class="faq-q" aria-expanded="false">How does the video sync work? <span class="faq-icon"><i class="fa-solid fa-plus"></i></span></button>
+        <div class="faq-a"><div>When anyone presses play, pause, or seeks to a different timestamp, that event is instantly broadcast to all viewers in the room. Everyone's player jumps to the same position within milliseconds.</div></div>
+      </div>
+      <div class="faq-item reveal" style="--d:.15s">
+        <button class="faq-q" aria-expanded="false">How many people can join a watch party? <span class="faq-icon"><i class="fa-solid fa-plus"></i></span></button>
+        <div class="faq-a"><div>Currently up to 20 people can join a single room. We're working on increasing this limit. The host controls playback for everyone.</div></div>
+      </div>
+      <div class="faq-item reveal" style="--d:.2s">
+        <button class="faq-q" aria-expanded="false">Is HexTV free to use? <span class="faq-icon"><i class="fa-solid fa-plus"></i></span></button>
+        <div class="faq-a"><div>Yes — completely free. Create unlimited rooms, invite unlimited friends, and chat away. No credit card required.</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA BANNER -->
+<section class="cta-banner">
+  <div class="cta-orb" aria-hidden="true"></div>
+  <div class="section-label kicker reveal">Get Started Free</div>
+  <h2 class="section-title reveal" style="--d:.05s">Ready to Watch Together?</h2>
+  <p class="reveal" style="--d:.1s">Create your first room in under 30 seconds. No credit card. No download.</p>
+  <form class="email-row reveal" style="--d:.15s" id="ctaForm">
+    <input type="email" class="email-input" placeholder="Enter your email address" aria-label="Email address">
+    <button type="submit" class="btn btn-primary btn-lg magnetic">Get Started <i class="fa-solid fa-arrow-right"></i></button>
+  </form>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-top">
+    <div class="footer-brand">
+      <a class="brand" href="index.html"><span class="brand-mark"></span><span class="brand-text">Hex<span>TV</span></span></a>
+      <p>Watch movies and videos in perfect sync with the people you care about, wherever they are.</p>
+    </div>
+    <div class="footer-links">
+      <div class="footer-col"><h5>Product</h5><a href="#how">How it Works</a><a href="library.html">Library</a><a href="how-to.html">Streaming Guide</a></div>
+      <div class="footer-col"><h5>Company</h5><a href="#">About</a><a href="#">Blog</a><a href="#">Contact</a></div>
+      <div class="footer-col"><h5>Legal</h5><a href="#">Privacy</a><a href="#">Terms</a><a href="#">DMCA</a></div>
+    </div>
+  </div>
+  <div class="footer-wordmark" aria-hidden="true">HEXTV</div>
+  <div class="footer-bottom">
+    <span>© <span id="year">2026</span> HexTV. All rights reserved.</span>
+    <span>Made with <i class="fa-solid fa-heart" style="color:var(--red)"></i> for movie lovers everywhere</span>
+  </div>
+</footer>
+
+<script src="js/moviebox.js"></script>
+<script src="js/telemetry.js"></script>
+<script src="js/ui.js"></script>
+<script>
+  /* ── Hero poster wall: the same MovieBox catalogue the library uses ── */
+  (function () {
+    const wall = document.getElementById('heroGrid');
+    const COLS = 6, PER_COL = 4;
+    const cols = [];
+    for (let c = 0; c < COLS; c++) {
+      const col = document.createElement('div');
+      col.className = 'wall-col';
+      col.style.setProperty('--dur', (60 + (c % 3) * 14) + 's');
+      col.style.animationDirection = c % 2 ? 'reverse' : 'normal';
+      wall.appendChild(col);
+      cols.push(col);
+    }
+    // Placeholder tiles first so the wall is never empty
+    const fill = posters => cols.forEach((col, c) => {
+      const items = [];
+      for (let i = 0; i < PER_COL; i++) {
+        const p = posters.length ? posters[(c * PER_COL + i) % posters.length] : null;
+        items.push(p
+          ? `<div class="wall-tile"><img src="${p}" alt="" loading="lazy" decoding="async" onerror="this.remove()"></div>`
+          : `<div class="wall-tile ph" style="--h:${(c * 37 + i * 53) % 360}"></div>`);
+      }
+      col.innerHTML = items.join('') + items.join('');   // doubled for a seamless loop
+    });
+    fill([]);
+    MB.get('/catalog/home')
+      .then(d => {
+        const seen = new Set();
+        const items = (d.rows || []).flatMap(r => r.items)
+          .filter(it => it.cover && !seen.has(it.subject_id) && seen.add(it.subject_id));
+        if (items.length) fill(items.map(it => it.cover));
+        // Give the features mock a real title
+        const pick = items[Math.floor(Math.random() * Math.min(8, items.length))];
+        if (pick) {
+          document.getElementById('mockPoster').style.backgroundImage = `url("${pick.cover}")`;
+          document.getElementById('mockTitle').textContent = pick.title;
+        }
+      })
+      .catch(() => {});
+
+    // Stop the wall animating once the hero scrolls out of view
+    new IntersectionObserver(([en]) => wall.classList.toggle('paused', !en.isIntersecting))
+      .observe(document.querySelector('.hero'));
+
+    // Subtle parallax on the wall, at most once per frame
+    if (!window.STUI || !STUI.reduceMotion) {
+      let queued = false, mx = 0, my = 0;
+      window.addEventListener('pointermove', e => {
+        mx = e.clientX; my = e.clientY;
+        if (queued || window.scrollY > innerHeight) return;
+        queued = true;
+        requestAnimationFrame(() => {
+          queued = false;
+          wall.style.setProperty('--px', ((mx / innerWidth - 0.5) * -14).toFixed(1) + 'px');
+          wall.style.setProperty('--py', ((my / innerHeight - 0.5) * -10).toFixed(1) + 'px');
+        });
+      }, { passive: true });
+    }
+  })();
+
+  /* ── FAQ accordion ── */
+  document.querySelectorAll('.faq-q').forEach(q => {
+    q.addEventListener('click', () => {
+      const item = q.closest('.faq-item');
+      const isOpen = item.classList.contains('open');
+      document.querySelectorAll('.faq-item').forEach(i => { i.classList.remove('open'); i.querySelector('.faq-q').setAttribute('aria-expanded', 'false'); });
+      if (!isOpen) { item.classList.add('open'); q.setAttribute('aria-expanded', 'true'); }
+    });
+  });
+
+  /* ── CTA: go create a room ── */
+  document.getElementById('ctaForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const a = document.createElement('a'); a.href = 'room.html'; document.body.appendChild(a); a.click(); a.remove();
+  });
+
+  document.getElementById('year').textContent = new Date().getFullYear();
+
+  /* ── Live mock: chat messages + floating reactions ── */
+  (function () {
+    const chat = document.getElementById('mockChat');
+    const reacts = document.getElementById('mockReacts');
+    const lines = [
+      ['J', '#e50914', 'Jake', 'that plot twist <i class="fa-solid fa-face-surprise rx rx-surprise"></i>'],
+      ['A', '#1a73e8', 'Amara', 'literally no one saw that coming lol'],
+      ['M', '#0f9d58', 'Mike', 'heath ledger is a legend fr'],
+      ['K', '#f4b400', 'Kemi', 'pause!! I need snacks <i class="fa-solid fa-cookie-bite"></i>'],
+      ['J', '#e50914', 'Jake', 'ok resuming in 3…2…1'],
+      ['A', '#1a73e8', 'Amara', 'this soundtrack <i class="fa-solid fa-fire rx rx-fire"></i>']
+    ];
+    let i = 0;
+    const push = () => {
+      const [ini, color, name, text] = lines[i++ % lines.length];
+      const el = document.createElement('div');
+      el.className = 'chat-msg';
+      el.innerHTML = `<div class="chat-avatar" style="background:${color}">${ini}</div><div><span class="chat-name">${name}</span><span class="chat-text">${text}</span></div>`;
+      chat.appendChild(el);
+      while (chat.children.length > 3) chat.firstElementChild.remove();
+    };
+    for (let k = 0; k < 3; k++) push();
+    const emojis = ['🔥', '😂', '😱', '❤️', '👏', '🤯'];
+    const burst = () => {
+      const s = document.createElement('span');
+      s.innerHTML = STUI.reactionIcon(emojis[Math.floor(Math.random() * emojis.length)]);
+      s.style.left = (15 + Math.random() * 70) + '%';
+      reacts.appendChild(s);
+      setTimeout(() => s.remove(), 2600);
+    };
+    if (!window.STUI || !STUI.reduceMotion) {
+      setInterval(push, 2600);
+      setInterval(burst, 900);
+    }
+
+    // Ticking mock timestamp
+    let secs = 4365;
+    const t = document.getElementById('mockTime');
+    setInterval(() => { secs++; t.textContent = `${Math.floor(secs / 3600)}:${String(Math.floor(secs / 60) % 60).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`; }, 1000);
+  })();
+</script>
+</body>
+</html>

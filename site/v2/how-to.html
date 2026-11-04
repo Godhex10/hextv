@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="js/inapp.js"></script>
+<title>HexTV — How To Stream</title>
+<link rel="icon" href="img/hextv-h.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="img/hextv-icon-180.png">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css" integrity="sha512-2SwdPD6INVrV/lHTZbO2nodKhrnDdJK9/kg2XD1r9uGqPo1cUbujc+IYdlYdEErWNu69gVcYgdxlmVmzTWnetw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/guide.css">
+</head>
+<body>
+
+<div class="topbar" data-nav>
+  <a class="logo-sm brand" href="index.html" aria-label="HexTV" title="HexTV"><span class="brand-mark"></span></a>
+  <div class="topbar-divider"></div>
+  <span class="page-title">Streaming Guide</span>
+  <div class="topbar-right">
+    <a href="library.html" class="btn-back hide-sm"><i class="fa-solid fa-film"></i> Library</a>
+    <a href="index.html" class="btn-back"><i class="fa-solid fa-house"></i> Back to Lobby</a>
+  </div>
+</div>
+
+<div class="container">
+
+  <div class="header-section">
+    <span class="kicker reveal">Streaming guide</span>
+    <h1 class="reveal" style="--d:.05s">How to Stream <em>Movies</em></h1>
+    <p class="reveal" style="--d:.1s">Learn how to connect directly external web links or tap into cloud storage spaces to watch along effortlessly with friends.</p>
+    <div class="flow reveal" style="--d:.15s" aria-hidden="true">
+      <div class="flow-step"><i class="fa-solid fa-link"></i><span>Get a link</span></div>
+      <div class="flow-line"><span></span></div>
+      <div class="flow-step"><i class="fa-solid fa-paste"></i><span>Paste in room</span></div>
+      <div class="flow-line"><span></span></div>
+      <div class="flow-step"><i class="fa-solid fa-user-group"></i><span>Watch together</span></div>
+    </div>
+  </div>
+
+  <div class="guide-card reveal" style="--d:.05s">
+    <div class="guide-header" onclick="toggleAccordion(this)" role="button" tabindex="0" aria-expanded="false">
+      <div class="guide-header-left">
+        <span class="guide-icon"><i class="fa-solid fa-globe"></i></span>
+        <span class="guide-titles">
+          <small>Method 1</small>
+          <span class="guide-title">Using Normal Direct Links</span>
+        </span>
+      </div>
+      <span class="guide-arrow"><i class="fa-solid fa-chevron-down"></i></span>
+    </div>
+    <div class="guide-content">
+      <div class="guide-body">
+        <p>A direct link points directly to a raw video container file floating online. If the link does not finish with an explicit format file extension, the media engine player framework won't be able to open it.</p>
+
+        <ul class="steps-list">
+          <li data-step="1">Locate a public video file hosted on a clean CDN server or open directory.</li>
+          <li data-step="2">Verify that the target address finishes explicitly with <strong>.mp4</strong>, <strong>.webm</strong>, or <strong>.ogg</strong> extensions.</li>
+          <li data-step="3">Paste the link into the URL top field in your watch room layout, and hit <strong>Load</strong>.</li>
+        </ul>
+
+        <div class="code-box">
+          <i class="fa-solid fa-link code-ic" aria-hidden="true"></i>
+          <span class="code-text" id="sampleDirectLink">https://media.w3.org/2010/05/sintel/trailer.mp4</span>
+          <button class="btn-mini-copy" onclick="copyCode('sampleDirectLink')"><i class="fa-regular fa-copy"></i> Copy Test URL</button>
+        </div>
+        <a class="try-room" href="room.html?stream=https%3A%2F%2Fmedia.w3.org%2F2010%2F05%2Fsintel%2Ftrailer.mp4&amp;title=Sintel%20(trailer)"><i class="fa-solid fa-play"></i> Try it in a room</a>
+
+        <div class="badge-tip">
+          <strong><i class="fa-solid fa-triangle-exclamation"></i> Avoid Website wrappers:</strong> URLs from streaming platforms like YouTube, Netflix, or Vimeo are website containers, not raw video files. They will not load in a native standard video element tag.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="guide-card reveal" style="--d:.1s">
+    <div class="guide-header" onclick="toggleAccordion(this)" role="button" tabindex="0" aria-expanded="false">
+      <div class="guide-header-left">
+        <span class="guide-icon g2"><i class="fa-brands fa-google-drive"></i></span>
+        <span class="guide-titles">
+          <small>Method 2</small>
+          <span class="guide-title">Using Google Drive Links</span>
+        </span>
+      </div>
+      <span class="guide-arrow"><i class="fa-solid fa-chevron-down"></i></span>
+    </div>
+    <div class="guide-content">
+      <div class="guide-body">
+        <p>Google Drive is ideal for hosting full-length films (up to 15GB completely free). However, standard file share addresses point to the Google Drive preview browser interface instead of the raw asset stream. Here is how to create a bypass link:</p>
+
+        <ul class="steps-list">
+          <li data-step="1">Upload your movie file to your Google Drive ecosystem.</li>
+          <li data-step="2">Right-click the asset, select <strong>Share</strong>, and set the visibility parameters permissions explicitly to <strong>"Anyone with the link"</strong>.</li>
+          <li data-step="3">Copy that share link and identify the long sequence of characters in the middle—this is your distinct <strong>File ID</strong>.</li>
+          <li data-step="4">Drop that extracted ID into the structural layout template pattern format detailed below:</li>
+        </ul>
+
+        <div class="code-box">
+          <i class="fa-brands fa-google-drive code-ic" aria-hidden="true"></i>
+          <span class="code-text" id="driveTemplate">https://docs.google.com/uc?export=download&id=YOUR_FILE_ID_HERE</span>
+          <button class="btn-mini-copy" onclick="copyCode('driveTemplate')"><i class="fa-regular fa-copy"></i> Copy Base Structure</button>
+        </div>
+
+        <div class="badge-tip tip-good">
+          <strong><i class="fa-regular fa-lightbulb"></i> Pro Tip:</strong> Once you load this bypass link format into your HexTV window, your friends are streaming instantly from Google's high-speed content delivery network without needing to download anything!
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="guide-cta reveal">
+    <div>
+      <h3>Got your link?</h3>
+      <p>Open a room, paste it, and send the invite.</p>
+    </div>
+    <a href="room.html" class="btn btn-primary magnetic"><i class="fa-solid fa-plus"></i> Create a Room</a>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="js/telemetry.js"></script>
+<script src="js/ui.js"></script>
+<script>
+  // Simple fluid Accordion switch engine
+  function toggleAccordion(headerElement) {
+    const card = headerElement.parentElement;
+    const content = card.querySelector('.guide-content');
+    const isOpen = card.classList.contains('open');
+
+    // Close all cards first for clean transition presentation layout
+    document.querySelectorAll('.guide-card').forEach(item => {
+      item.classList.remove('open');
+      item.querySelector('.guide-content').style.maxHeight = null;
+      item.querySelector('.guide-header').setAttribute('aria-expanded', 'false');
+    });
+
+    if (!isOpen) {
+      card.classList.add('open');
+      headerElement.setAttribute('aria-expanded', 'true');
+      // Set to scrollHeight dynamically to trigger CSS transition heights smoothly
+      content.style.maxHeight = content.scrollHeight + "px";
+    }
+  }
+
+  // Keyboard support for the accordion headers
+  document.querySelectorAll('.guide-header').forEach(h => h.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleAccordion(h); }
+  }));
+
+  // Quick clipboard utilities layout integration
+  function copyCode(elementId) {
+    const textToCopy = document.getElementById(elementId).innerText;
+    navigator.clipboard.writeText(textToCopy).then(() => {
+      showToast("Copied structural path asset to clipboard!");
+    });
+  }
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2500);
+  }
+</script>
+</body>
+</html>

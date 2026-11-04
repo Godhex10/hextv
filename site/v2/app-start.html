@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<script>
+  // Where the Android app opens. Onboarding shows once; after that it goes straight to the library.
+  try { if (localStorage.getItem('hx_onboarded') === '1') location.replace('library.html'); } catch (e) { /* storage blocked */ }
+</script>
+<script src="js/inapp.js"></script>
+<title>HexTV — Welcome</title>
+<link rel="icon" href="img/hextv-h.svg" type="image/svg+xml">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:opsz,wght@9..40,300..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/base.css">
+<style>
+  html, body { height: 100%; background: var(--black); overflow: hidden; }
+  body { background: radial-gradient(120% 70% at 50% 0%, #2a0508 0%, var(--black) 60%); color: var(--text); }
+  .ob { position: fixed; inset: 0; display: flex; flex-direction: column; padding: max(14px, env(safe-area-inset-top)) 22px max(22px, env(safe-area-inset-bottom)); }
+  .ob-top { display: flex; justify-content: flex-end; min-height: 30px; }
+  .ob-skip { background: none; border: 0; color: var(--muted); font: 500 14px 'DM Sans', sans-serif; padding: 6px 4px; }
+  .ob-view { flex: 1; display: flex; min-height: 0; overflow: hidden; margin: 0 -22px; }
+  .ob-track { flex: 0 0 100%; width: 100%; min-width: 0; display: flex; transition: transform .35s ease; min-height: 0; }
+  .ob-slide { flex: 0 0 100%; min-width: 0; display: flex; flex-direction: column; justify-content: flex-end; min-height: 0; padding: 0 22px 8px; }
+  .ob-art { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; margin-bottom: 18px; position: relative; }
+  .ob-kicker { color: var(--red-hot); font: 700 11px 'DM Sans', sans-serif; letter-spacing: .16em; text-transform: uppercase; margin-bottom: 8px; }
+  .ob h1 { font: 400 clamp(34px, 10vw, 44px)/0.95 'Bebas Neue', sans-serif; letter-spacing: .01em; }
+  .ob h1 em { font-style: normal; color: var(--red-hot); display: block; }
+  .ob p { color: var(--muted); font-size: 14.5px; line-height: 1.55; margin-top: 12px; max-width: 34ch; }
+  .ob-dots { display: flex; gap: 6px; margin: 18px 0; }
+  .ob-dots i { width: 6px; height: 6px; border-radius: 3px; background: var(--surface3); transition: width .25s, background .25s; }
+  .ob-dots i.on { width: 22px; background: var(--red); }
+  .ob-next { height: 50px; border: 0; border-radius: 14px; background: linear-gradient(180deg, var(--red-hot), var(--red)); color: #fff; font: 700 16px 'DM Sans', sans-serif; box-shadow: 0 10px 26px -12px rgba(229,9,20,.9); }
+  .ob-next:disabled { opacity: .45; }
+
+  /* slide 1: two phones in sync */
+  .sync { position: relative; width: 250px; height: 230px; }
+  .mini { position: absolute; width: 120px; height: 200px; border-radius: 18px; background: #000; border: 3px solid #2a2a33; overflow: hidden; box-shadow: 0 20px 40px -20px #000; }
+  .mini img { width: 100%; height: 150px; object-fit: cover; display: block; background: var(--surface2); }
+  .mini .bar { height: 3px; margin: 10px 10px 0; background: var(--surface3); border-radius: 2px; }
+  .mini .bar b { display: block; height: 100%; width: 46%; background: var(--red); border-radius: 2px; }
+  .mini span { display: block; text-align: right; font-size: 11px; margin: 8px 10px 0; }
+  .mini.a { left: 0; top: 0; transform: rotate(-7deg); }
+  .mini.b { right: 0; top: 14px; transform: rotate(5deg); }
+  .pill { position: absolute; left: 50%; bottom: -6px; transform: translateX(-50%); background: #0c2216; border: 1px solid #1c5a35; color: #5ee69a; font-size: 12px; font-weight: 600; padding: 5px 11px; border-radius: 999px; white-space: nowrap; }
+  .pill::before { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--green); margin-right: 6px; }
+
+  /* slide 2: poster wall */
+  .wall { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: 100%; max-width: 320px; max-height: 100%; overflow: hidden; -webkit-mask: linear-gradient(#000 70%, transparent); mask: linear-gradient(#000 70%, transparent); }
+  .wall img { width: 100%; aspect-ratio: 2/3; object-fit: cover; border-radius: 10px; background: var(--surface2); display: block; }
+  .wall img:nth-child(3n+2) { transform: translateY(-14px); }
+
+  /* slide 3: the invite in a chat */
+  .chat { width: 100%; max-width: 300px; }
+  .bubble { display: inline-block; background: var(--surface2); border-radius: 14px 14px 14px 4px; padding: 8px 12px; font-size: 13px; margin-bottom: 8px; }
+  .card { background: #10301f; border-radius: 14px; padding: 6px; }
+  .card .pv { display: flex; gap: 8px; align-items: center; background: #0b0b10; border-radius: 10px; padding: 10px; }
+  .card .pv .t { flex: 1; min-width: 0; }
+  .card .pv .t small { color: var(--red-hot); font-size: 9px; font-weight: 700; letter-spacing: .1em; }
+  .card .pv .t div { font: 400 24px 'Bebas Neue', sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .pv img { width: 58px; height: 80px; object-fit: cover; border-radius: 6px; background: var(--surface2); }
+  .card .cap { font-size: 12.5px; font-weight: 600; padding: 8px 6px 2px; }
+  .card .url { font-size: 11px; color: #8fb8a0; padding: 0 6px 4px; }
+  .reacts { display: flex; gap: 8px; margin-top: 12px; }
+  .reacts span { width: 38px; height: 38px; border-radius: 12px; background: var(--surface2); display: grid; place-items: center; font-size: 18px; }
+
+  /* slide 4: name + colour */
+  .who { width: 100%; max-width: 330px; background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 22px 18px; }
+  .av { width: 60px; height: 60px; border-radius: 50%; margin: 0 auto 20px; display: grid; place-items: center; font: 700 20px 'DM Sans', sans-serif; color: #fff; background: var(--red); transition: background .2s; }
+  .who label { display: block; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 8px; }
+  .who input { width: 100%; height: 46px; border-radius: 12px; border: 1px solid var(--border-hover); background: var(--dark); color: var(--text); font: 500 16px 'DM Sans', sans-serif; padding: 0 14px; outline: none; }
+  .who input:focus { border-color: var(--red); }
+  .colors { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+  .colors button { width: 32px; height: 32px; border-radius: 50%; border: 0; box-shadow: 0 0 0 2px var(--surface); }
+  .colors button.on { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px #fff; }
+  .who .sp { height: 18px; }
+  @media (max-height: 640px) { .ob-art { margin-bottom: 10px; } .sync { transform: scale(.8); } .av { margin-bottom: 12px; } }
+</style>
+</head>
+<body>
+<div class="ob">
+  <div class="ob-top"><button class="ob-skip" id="skip">Skip</button></div>
+  <div class="ob-view"><div class="ob-track" id="track">
+    <section class="ob-slide">
+      <div class="ob-art">
+        <div class="sync">
+          <div class="mini a"><img data-poster="0" alt=""><div class="bar"><b></b></div><span>You</span></div>
+          <div class="mini b"><img data-poster="0" alt=""><div class="bar"><b></b></div><span>Ada</span></div>
+          <div class="pill">In sync · 0.02s</div>
+        </div>
+      </div>
+      <div class="ob-kicker">Welcome to HexTV</div>
+      <h1>Watch together.<em>Perfectly in sync.</em></h1>
+      <p>Press play and everyone in the room watches the same moment, on any phone, PC or browser.</p>
+    </section>
+    <section class="ob-slide">
+      <div class="ob-art"><div class="wall" id="wall"></div></div>
+      <div class="ob-kicker">The library</div>
+      <h1>Movies &amp; series,<em>ready to watch.</em></h1>
+      <p>Pick a title or an episode and HexTV opens a room for you and your friends.</p>
+    </section>
+    <section class="ob-slide">
+      <div class="ob-art">
+        <div class="chat">
+          <div class="bubble">movie night? 🍿</div>
+          <div class="card">
+            <div class="pv"><div class="t"><small>WATCH PARTY · LIVE NOW</small><div id="cardTitle">Movie night</div></div><img data-poster="1" alt=""></div>
+            <div class="cap">Join my watch party on HexTV</div>
+            <div class="url">streamtogether-pi.vercel.app</div>
+          </div>
+          <div class="reacts"><span>🔥</span><span>😂</span><span>❤️</span></div>
+        </div>
+      </div>
+      <div class="ob-kicker">Bring your friends</div>
+      <h1>One link.<em>Everyone's in.</em></h1>
+      <p>Share your room in WhatsApp or anywhere. Friends tap the card and join, then chat and react while you watch.</p>
+    </section>
+    <section class="ob-slide">
+      <div class="ob-art">
+        <div class="who">
+          <div class="av" id="av">?</div>
+          <label for="name">Your name</label>
+          <input id="name" maxlength="20" autocomplete="nickname" autocapitalize="words" placeholder="e.g. Prince" enterkeyhint="done">
+          <div class="sp"></div>
+          <label>Your colour in chat</label>
+          <div class="colors" id="colors"></div>
+        </div>
+      </div>
+      <div class="ob-kicker">Almost there</div>
+      <h1>What should friends<em>call you?</em></h1>
+      <p>You can change it any time in a room's chat.</p>
+    </section>
+  </div></div>
+  <div class="ob-dots" id="dots"><i class="on"></i><i></i><i></i><i></i></div>
+  <button class="ob-next" id="next">Next</button>
+</div>
+<script src="js/moviebox.js"></script>
+<script>
+(function () {
+  'use strict';
+  const LAST = 3;
+  const COLORS = ['#e50914', '#1a73e8', '#0f9d58', '#f4b400', '#9c27b0', '#ff5722'];
+  const $ = id => document.getElementById(id);
+  const store = (k, v) => { try { v === undefined ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) { /* storage blocked */ } };
+  const read = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+
+  let i = 0;
+  let color = read('st_color') || COLORS[0];
+  const name = $('name');
+  name.value = read('st_username') && !/^Guest_\d+$/.test(read('st_username')) ? read('st_username') : '';
+
+  function show(n) {
+    i = Math.max(0, Math.min(LAST, n));
+    $('track').style.transform = `translateX(${-100 * i}%)`;
+    [...$('dots').children].forEach((d, k) => d.classList.toggle('on', k === i));
+    $('skip').style.visibility = i === LAST ? 'hidden' : '';
+    $('next').textContent = i === LAST ? 'Start watching' : 'Next';
+    refresh();
+    if (i === LAST) setTimeout(() => name.focus(), 380);
+    else name.blur();
+  }
+  function refresh() {
+    const v = name.value.trim();
+    $('av').textContent = v ? v.split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase() : '?';
+    $('av').style.background = color;
+    $('next').disabled = i === LAST && !v;
+  }
+  function finish() {
+    store('st_username', name.value.trim().slice(0, 20));
+    store('st_color', color);
+    store('hx_onboarded', '1');
+    location.replace('library.html');
+  }
+
+  COLORS.forEach(c => {
+    const b = document.createElement('button');
+    b.style.background = c;
+    b.setAttribute('aria-label', 'Colour ' + c);
+    b.className = c === color ? 'on' : '';
+    b.onclick = () => { color = c; [...$('colors').children].forEach(x => x.classList.toggle('on', x === b)); refresh(); };
+    $('colors').appendChild(b);
+  });
+  if (!COLORS.includes(color)) { color = COLORS[0]; $('colors').firstChild.classList.add('on'); }
+
+  name.addEventListener('input', refresh);
+  name.addEventListener('keydown', e => { if (e.key === 'Enter' && name.value.trim()) finish(); });
+  $('next').onclick = () => (i === LAST ? finish() : show(i + 1));
+  $('skip').onclick = () => show(LAST);
+
+  // Swipe between slides
+  let x0 = null;
+  $('track').addEventListener('touchstart', e => { x0 = e.touches[0].clientX; }, { passive: true });
+  $('track').addEventListener('touchend', e => {
+    if (x0 === null) return;
+    const dx = e.changedTouches[0].clientX - x0; x0 = null;
+    if (Math.abs(dx) > 50) show(i + (dx < 0 ? 1 : -1));
+  });
+  // Real posters from the library for the pictures
+  MB.get('/catalog/home').then(d => {
+    const items = [];
+    (d.rows || []).forEach(r => (r.items || []).forEach(it => { if (it.cover && !items.some(x => x.cover === it.cover)) items.push(it); }));
+    if (!items.length) return;
+    document.querySelectorAll('[data-poster]').forEach(img => { img.src = items[+img.dataset.poster % items.length].cover; });
+    $('cardTitle').textContent = items[1 % items.length].title || 'Movie night';
+    $('wall').innerHTML = items.slice(2, 11).map(it => `<img src="${it.cover.replace(/"/g, '&quot;')}" alt="" loading="lazy">`).join('');
+  }).catch(() => { /* pictures are decoration */ });
+
+  show(0);
+})();
+</script>
+</body>
+</html>
