@@ -1,0 +1,35 @@
+name = "streamtogether-rooms"
+main = "src/index.js"
+compatibility_date = "2025-06-01"
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "Room"
+
+[[durable_objects.bindings]]
+name = "STATS"
+class_name = "Stats"
+
+# SQLite-backed Durable Objects are the kind available on the Workers Free plan
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["Stats"]
+
+# Health checks and alert rules
+[triggers]
+crons = ["*/15 * * * *"]
+
+[vars]
+API_BASE = "https://streamtogether-pi.vercel.app"
+# SHA-256 of the dashboard password (the password itself is in dashboard-password.txt, not in git)
+DASHBOARD_PASSWORD_SHA256 = "737cf29528ecfdbb706ae76b84cdf35263c3241f1a86315ae83f9059587fe1cf"
+# Usage on the dashboard: read with read-only tokens set as secrets
+#   npx wrangler secret put VERCEL_TOKEN   (vercel.com/account/settings/tokens, scope: this team)
+#   npx wrangler secret put CF_API_TOKEN   (Cloudflare API token with "Account Analytics: Read")
+VERCEL_TEAM_ID = "team_6RzHwdguoZ0XkpnW3H62tNN5"
+CF_ACCOUNT_ID = "ae9225caeae588bc224f90dddd5062cf"
+# Telegram alerts: set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID with `npx wrangler secret put`
