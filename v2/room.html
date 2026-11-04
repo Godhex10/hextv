@@ -75,6 +75,8 @@
 
       <!-- Stream lookup progress / errors for library titles -->
       <div class="media-status" id="mediaStatus" hidden>
+        <div class="media-art" id="mediaArt" aria-hidden="true"></div>
+        <img class="media-poster" id="mediaPoster" alt="" aria-hidden="true">
         <div class="media-spinner" id="mediaSpinner" aria-hidden="true"></div>
         <p id="mediaStatusText">Finding the best stream…</p>
         <button class="btn-retry" id="mediaRetry" hidden><i class="fa-solid fa-rotate-right"></i> Try again</button>
@@ -113,7 +115,8 @@
         </div>
       </div>
 
-      <video id="videoPlayer" preload="auto" playsinline webkit-playsinline class="video-hidden" aria-label="Watch party video player"></video>
+      <!-- The poster is a see-through pixel: without one, Android draws a big grey play icon until the first frame -->
+      <video id="videoPlayer" poster="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" preload="auto" playsinline webkit-playsinline class="video-hidden" aria-label="Watch party video player"></video>
       <div class="yt-wrap" id="ytWrap" hidden></div>
       <!-- Over the YouTube player: taps go to the room, not straight to YouTube -->
       <div class="tap-layer" id="tapLayer" hidden></div>
@@ -813,6 +816,7 @@ function loadMedia(media) {
   struggleTold = new Set();
   hideUpNext();
   document.getElementById('audioNote').hidden = true;
+  setMediaArt(media);
   const token = ++mediaToken;
   document.getElementById('pasteHint')?.remove();
   if (media.title) document.getElementById('roomNameDisplay').textContent = media.title;
@@ -878,7 +882,7 @@ async function resolveLibraryTitle(media, token) {
     mediaStreams = MB.rankStreams(res.streams);
     if (!mediaStreams.length) throw new Error('No playable version of this title was found.');
     playStream(0, false);
-    hideMediaStatus();
+    showStarting(media);
   } catch (e) {
     if (token === mediaToken) { showMediaStatus(e.message, true); stat.error('lookup', e.message); }
     throw e;
@@ -951,12 +955,89 @@ video.addEventListener('error', () => {
 });
 
 function showMediaStatus(text, isError) {
+  endStarting(false);
   mediaStatus.hidden = false;
   mediaStatus.classList.toggle('error', !!isError);
   document.getElementById('mediaStatusText').textContent = text;
   document.getElementById('mediaRetry').hidden = !isError;
 }
 function hideMediaStatus() { mediaStatus.hidden = true; }
+
+/* ── Loading screen for library titles: the title's poster (blurred behind, sharp in front), a
+   spinner and what's happening, from the stream lookup until the first frame plays. After 10s
+   without a picture it says the connection is slow and offers Try again. ── */
+const starting = { active: false, timer: 0, title: '' };
+
+function setMediaArt(media) {
+  const art = document.getElementById('mediaArt'), poster = document.getElementById('mediaPoster');
+  mediaStatus.classList.remove('has-art');
+  art.style.backgroundImage = '';
+  poster.removeAttribute('src');
+  starting.title = '';
+  if (!media.mb) return;
+  MB.get('/detail/' + encodeURIComponent(media.mb)).then(d => {
+    if (currentMedia !== media) return;
+    starting.title = d.title || '';
+    if (starting.active && !mediaStatus.classList.contains('ready') && document.getElementById('mediaRetry').hidden) {
+      startingText(startingLabel(media));
+    }
+    if (!d.cover) return;
+    poster.onload = () => {
+      if (currentMedia !== media) return;
+      art.style.backgroundImage = `url(${JSON.stringify(d.cover)})`;
+      mediaStatus.classList.add('has-art');
+    };
+    poster.src = d.cover;
+  }).catch(() => {});
+}
+
+function startingText(text, state) {
+  document.getElementById('mediaStatusText').textContent = text;
+  mediaStatus.classList.toggle('ready', state === 'ready');
+  document.getElementById('mediaRetry').hidden = state !== 'slow';
+}
+
+const startingLabel = media =>
+  `Starting ${showName(media) || starting.title || 'the video'}${media.se ? ` · S${media.se} E${media.ep}` : ''}…`;
+
+function showStarting(media) {
+  showMediaStatus(startingLabel(media));
+  starting.active = true;
+  mediaStatus.classList.add('starting');
+  markReady();
+  starting.timer = setTimeout(() => {
+    if (starting.active && !mediaStatus.classList.contains('ready')) {
+      startingText('Still loading — your connection seems slow. Hang on, or try again.', 'slow');
+    }
+  }, 10000);
+}
+
+// Loaded, and the room is paused: no spinner, nothing looks stuck. (With no room clock yet the
+// title is about to start by itself, so it keeps saying "Starting…")
+function markReady() {
+  if (starting.active && video.paused && video.readyState >= 3 && clock && !clock.playing) startingText('Ready to play', 'ready');
+}
+
+// The first frame is playing (fade the screen out), or something else took over the panel
+function endStarting(fade) {
+  clearTimeout(starting.timer);
+  const wasActive = starting.active;
+  starting.active = false;
+  if (fade && wasActive) {
+    // Fades out exactly as it looks now; the classes go once it's hidden
+    mediaStatus.classList.add('leaving');
+    setTimeout(() => {
+      if (!mediaStatus.classList.contains('leaving')) return;   // the panel was reused meanwhile
+      mediaStatus.classList.remove('leaving', 'starting', 'ready');
+      hideMediaStatus();
+    }, 400);
+    return;
+  }
+  mediaStatus.classList.remove('leaving', 'starting', 'ready');
+}
+
+video.addEventListener('canplay', markReady);
+video.addEventListener('playing', () => { if (starting.active && !yt.active) endStarting(true); });
 
 document.getElementById('mediaRetry').addEventListener('click', () => {
   const media = currentMedia;
@@ -1088,6 +1169,7 @@ function setClock(c) {
   inSync = true;
   updatePlayIcon();
   tick();
+  markReady();
 }
 
 function userPlay() {

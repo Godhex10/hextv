@@ -133,6 +133,23 @@ button.sync-badge:active { transform: scale(0.95); }
 .media-spinner { width: 34px; height: 34px; border-radius: 50%; border: 3px solid rgba(255, 255, 255, 0.12); border-top-color: var(--red-hot); animation: spinMedia 0.8s linear infinite; }
 @keyframes spinMedia { to { transform: rotate(360deg); } }
 .media-status.error .media-spinner { display: none; }
+/* The title's poster while it loads: blurred to fill the player, sharp in front */
+.media-status { overflow: hidden; transition: opacity 0.4s ease; }
+.media-status > * { position: relative; }
+.media-status > .media-art { position: absolute; inset: -40px; background: center / cover no-repeat; filter: blur(24px) brightness(0.38) saturate(1.2);
+  opacity: 0; transition: opacity 0.5s ease; }
+.media-status.has-art > .media-art { opacity: 1; }
+.media-poster { display: none; height: min(34%, 170px); aspect-ratio: 2 / 3; object-fit: cover; border-radius: 10px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.1); }
+.media-status.has-art .media-poster { display: block; animation: posterIn 0.5s var(--ease) both; }
+@keyframes posterIn { from { opacity: 0; transform: translateY(8px) scale(0.96); } }
+.media-status.has-art p { color: rgba(255, 255, 255, 0.9); text-shadow: 0 1px 8px rgba(0, 0, 0, 0.7); }
+/* Waiting for the first frame: taps reach the player underneath (only the buttons are in the way) */
+.media-status.starting { pointer-events: none; }
+.media-status.starting button { pointer-events: auto; }
+.media-status.ready .media-spinner { display: none; }
+.media-status.leaving { opacity: 0; }
+@media (max-height: 300px) { .media-poster { display: none !important; } }
 .media-status.error p { color: #ff9a9a; }
 .btn-retry { display: inline-flex; align-items: center; gap: 0.45rem; height: 36px; padding: 0 1.1rem; border: none; border-radius: 999px; cursor: pointer;
   font: 700 0.8rem var(--font-ui); color: #fff; background: var(--grad-red); }
