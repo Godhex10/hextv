@@ -1,0 +1,61 @@
+{
+  "name": "hextv-desktop",
+  "productName": "HexTV",
+  "version": "1.0.1",
+  "description": "HexTV for Windows — watch movies, series and YouTube together, in sync",
+  "author": "godhex10",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^38.8.6",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "com.godhex.watchparty",
+    "productName": "HexTV",
+    "copyright": "Copyright © 2026 godhex10",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "build/icon.ico",
+      "package.json"
+    ],
+    "protocols": [
+      {
+        "name": "HexTV room link",
+        "schemes": [
+          "hextv"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "deleteAppDataOnUninstall": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "HexTV",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "artifactName": "HexTV-Setup-${version}.${ext}"
+    }
+  }
+}
