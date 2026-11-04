@@ -7,6 +7,7 @@ import android.net.Uri;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
+import android.webkit.WebSettings;
 import android.webkit.WebView;
 import com.getcapacitor.Bridge;
 import com.getcapacitor.BridgeWebViewClient;
@@ -47,11 +48,19 @@ public class HexPlugin extends Plugin {
     }
 
     private final Map<String, Map<String, String>> mediaHeaders = new ConcurrentHashMap<>();   // host -> headers
+    private MediaServer mediaServer;
 
     @Override
     public void load() {
         final Bridge bridge = getBridge();
         WebView webView = bridge.getWebView();
+        try {
+            mediaServer = new MediaServer();
+        } catch (Exception e) {
+            mediaServer = null;   // the page falls back to intercepted requests, then the relay
+        }
+        // The site is https and the video server is http://127.0.0.1: let the player use it
+        webView.getSettings().setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
         webView.addJavascriptInterface(new Js(), "HexAndroid");
         bridge.setWebViewClient(new BridgeWebViewClient(bridge) {
             @Override
@@ -149,23 +158,36 @@ public class HexPlugin extends Plugin {
         /** The page asks to play a CDN URL directly; true means requests to that host get the headers. */
         @JavascriptInterface
         public boolean allowMedia(String url, String headersJson) {
-            try {
-                Uri u = Uri.parse(url);
-                if (!"https".equals(u.getScheme()) || !isMediaHost(u.getHost())) return false;
-                JSONObject j = new JSONObject(headersJson);
-                Map<String, String> h = new HashMap<>();
-                for (Iterator<String> it = j.keys(); it.hasNext(); ) {
-                    String k = it.next();
-                    String name = ALLOWED_HEADERS.get(k.toLowerCase());
-                    String v = j.optString(k, "");
-                    if (name != null && !v.isEmpty() && v.length() < 300) h.put(name, v);
-                }
-                if (h.isEmpty()) return false;
-                mediaHeaders.put(u.getHost(), h);
-                return true;
-            } catch (Exception e) {
-                return false;
+            Map<String, String> h = cdnHeaders(url, headersJson);
+            if (h == null) return false;
+            mediaHeaders.put(Uri.parse(url).getHost(), h);
+            return true;
+        }
+
+        /** The same through the app's own video server: the address to play, or "" if it can't. */
+        @JavascriptInterface
+        public String mediaUrl(String url, String headersJson) {
+            Map<String, String> h = cdnHeaders(url, headersJson);
+            return h == null || mediaServer == null ? "" : mediaServer.urlFor(url, h);
+        }
+    }
+
+    /** The headers to send a CDN url with, or null if it isn't one of the video hosts. */
+    private static Map<String, String> cdnHeaders(String url, String headersJson) {
+        try {
+            Uri u = Uri.parse(url);
+            if (!"https".equals(u.getScheme()) || !isMediaHost(u.getHost())) return null;
+            JSONObject j = new JSONObject(headersJson);
+            Map<String, String> h = new HashMap<>();
+            for (Iterator<String> it = j.keys(); it.hasNext(); ) {
+                String k = it.next();
+                String name = ALLOWED_HEADERS.get(k.toLowerCase());
+                String v = j.optString(k, "");
+                if (name != null && !v.isEmpty() && v.length() < 300) h.put(name, v);
             }
+            return h.isEmpty() ? null : h;
+        } catch (Exception e) {
+            return null;
         }
     }
 }
