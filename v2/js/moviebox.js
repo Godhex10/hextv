@@ -20,11 +20,15 @@
   }
 
   // Browsers can't send the Referer/Origin the video CDN insists on, so MP4s go through the API relay.
-  // The Windows app can send them itself and plays straight from the CDN, unless that failed once.
+  // The apps send them themselves and play straight from the CDN. Each way that fails once is
+  // dropped for the session: the Android app's video server, then intercepted requests, then the relay.
   const desktop = window.HexNative || window.HexDesktop;   // the Windows or Android app (js/inapp.js)
-  let directOff = false;
+  const directWays = desktop ? [desktop.mediaUrl && 'server', desktop.allowMedia && 'intercept'].filter(Boolean) : [];
+  let directWay = 0;
   function proxied(stream) {
-    if (desktop && !directOff && stream.headers && desktop.allowMedia(stream.url, stream.headers)) return stream.url;
+    const way = stream.headers && directWays[directWay];
+    if (way === 'server') { const local = desktop.mediaUrl(stream.url, stream.headers); if (local) return local; }
+    if (way && desktop.allowMedia && desktop.allowMedia(stream.url, stream.headers)) return stream.url;
     const h = stream.headers ? '&h=' + encodeURIComponent(btoa(JSON.stringify(stream.headers))) : '';
     // The relay only serves links the API signed
     const t = stream.proxy_token ? `&exp=${stream.proxy_token.exp}&sig=${stream.proxy_token.sig}` : '';
@@ -69,7 +73,8 @@
   }
 
   const isRelayed = src => typeof src === 'string' && src.startsWith(API + '/proxy');
-  const useRelay = () => { directOff = true; };   // a direct play failed: back to the relay for this session
+  // A direct play failed: the next way for this session. Returns the way that failed.
+  const useRelay = () => directWays[directWay++] || 'relay';
 
   window.MB = { API, ROOMS, get, proxied, isRelayed, useRelay, rankStreams, srtToVtt, roomUrl };
 })();

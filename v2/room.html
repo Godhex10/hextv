@@ -929,10 +929,10 @@ function playStream(i, keep) {
 let lastRetry = { index: -1, at: 0 };
 video.addEventListener('error', () => {
   if (!currentMedia || !currentMedia.mb || !video.getAttribute('src')) return;
-  // The Windows app plays straight from the CDN; if that's refused, use the relay like the website
+  // The apps play straight from the CDN; if that's refused, try their next way, then the relay
   if (!MB.isRelayed(video.getAttribute('src'))) {
-    MB.useRelay();
-    stat.error('relay', 'direct play refused, using the relay');
+    const err = video.error;
+    stat.error('relay', 'direct (' + MB.useRelay() + ') refused: ' + (err ? err.code + ' ' + (err.message || '') : '?'));
     playStream(streamIndex, true);
     return;
   }

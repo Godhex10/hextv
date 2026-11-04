@@ -15,6 +15,10 @@
       // Returns true when the app will add the CDN's headers, so the page can skip the relay
       allowMedia: (url, headers) => { try { return android.allowMedia(String(url), JSON.stringify(headers || {})); } catch (e) { return false; } }
     };
+    // 1.0.3+: the app's own video server on the phone (more reliable than intercepted requests)
+    if (typeof android.mediaUrl === 'function') {
+      window.HexNative.mediaUrl = (url, headers) => { try { return android.mediaUrl(String(url), JSON.stringify(headers || {})) || ''; } catch (e) { return ''; } };
+    }
   } else if (window.HexDesktop && !window.HexNative) {
     window.HexNative = window.HexDesktop;
   }
