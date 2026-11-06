@@ -1184,14 +1184,16 @@ def get_detail(subject_id: str):
 def get_episodes(subject_id: str):
     return {"subject_id": subject_id, "seasons": engine.get_episodes(subject_id)}
 
-# Movies on the website switched off to save Vercel credit (set RELAY_PAUSED=0 to switch back on).
-# The Windows/Android apps play straight from the CDN without the relay, so they keep working (?direct=1).
+# This API's own /proxy is off on Vercel to save credit (set RELAY_PAUSED=0 to switch it back on);
+# the website relays through the Lagos server instead, which runs this same file.
+# STREAMS_PAUSED=1 stops handing out links to the website again (the apps keep working, ?direct=1).
 RELAY_PAUSED = os.environ.get("RELAY_PAUSED", "1" if os.environ.get("VERCEL") else "0") == "1"
+STREAMS_PAUSED = os.environ.get("STREAMS_PAUSED", "0") == "1"
 RELAY_PAUSED_MESSAGE = "Movies are paused on the website for now, try again soon."
 
 @app.get("/api/stream/{subject_id}")
 def get_streams(subject_id: str, se: int = 0, ep: int = 0, detail_path: Optional[str] = None, direct: int = 0):
-    if RELAY_PAUSED and not direct:
+    if STREAMS_PAUSED and not direct:
         raise HTTPException(status_code=503, detail=RELAY_PAUSED_MESSAGE)
     streams = engine.get_streams(subject_id, season=se, episode=ep, detail_path=detail_path)
     # Copies, so the cached entries never carry a token that later expires
