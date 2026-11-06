@@ -23,6 +23,9 @@ const VERCEL_PRO = { credit: 20, fotPerGB: 0.43, fdtPerGB: 0.28, fdtIncludedGB: 
 // Cloudflare Workers Free — developers.cloudflare.com/workers/platform/limits and /durable-objects/platform/pricing.
 // Daily limits reset at 00:00 UTC; incoming WebSocket messages count as 1 request per 20.
 const CF_FREE = { workerRequests: 100_000, doRequests: 100_000, doGBs: 13_000, rowsRead: 5_000_000, rowsWritten: 100_000, storageBytes: 5 * 1024 ** 3 };
+// Lagos movie relay — WhoGoHost Linux Cloud Server C1, paid monthly from 2026-11-06.
+// "Unlimited, fair use" bandwidth: support was asked about 1–3 TB a month, so warn from 1 TB.
+const WHOGOHOST_C1 = { plan: 'C1', priceNGN: 11050, renewDay: 6, fairUseGB: 1000, fairUseHardGB: 2000 };
 const GB = 1e9;   // Vercel bills decimal gigabytes
 const KEEP_DAYS = 45;
 
@@ -61,6 +64,7 @@ export class Stats extends DurableObject {
       CREATE TABLE IF NOT EXISTS titles (day TEXT, tkey TEXT, title TEXT, type TEXT, joins INTEGER, watch_s REAL, PRIMARY KEY (day, tkey));
       CREATE TABLE IF NOT EXISTS searches (day TEXT, q TEXT, n INTEGER, empty INTEGER, PRIMARY KEY (day, q));
       CREATE TABLE IF NOT EXISTS health (at INTEGER PRIMARY KEY, ok INTEGER, ms INTEGER, detail TEXT);
+      CREATE TABLE IF NOT EXISTS relay_checks (at INTEGER PRIMARY KEY, up INTEGER, mb INTEGER, detail TEXT);
       CREATE TABLE IF NOT EXISTS errlog (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER, kind TEXT, detail TEXT, platform TEXT);
       CREATE TABLE IF NOT EXISTS alerts (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER, level TEXT, akey TEXT, title TEXT, detail TEXT, sent INTEGER);
       CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT);
@@ -288,6 +292,7 @@ export class Stats extends DurableObject {
     else if (v.creditPct >= 1) await this.notify('critical', 'vercel_credit_100', 'Vercel credit used up', `About $${v.creditUsed.toFixed(2)} of the $20 monthly credit is used. Further usage is billed.`);
     else if (v.creditPct >= 0.75) await this.notify('warning', 'vercel_credit_75', `Vercel credit at ${Math.round(v.creditPct * 100)}%`, `About $${v.creditUsed.toFixed(2)} of $20 used this month${v.daysLeft != null ? `; at today's pace it lasts about ${Math.max(0, v.daysLeft).toFixed(1)} more days` : ''}.`);
     if (v.budget && !v.budget.pause) await this.notify('warning', 'vercel_budget_nopause', 'Vercel spending cap does not pause', `Your Spend Management budget is $${v.budget.amount} with pause off, so charges can keep going past it. Turn on "pause" in Vercel → Settings → Billing.`);
+    await this.lagosAlerts(lim.lagos, now);
     for (const c of lim.cloudflare.items) {
       if (c.pct >= 0.9) await this.notify('critical', 'cf_' + c.k + '_90', `Cloudflare ${c.name} at ${Math.round(c.pct * 100)}%`, 'Nearly at the free daily limit; rooms may stop working until 00:00 UTC.');
       else if (c.pct >= 0.7) await this.notify('warning', 'cf_' + c.k + '_70', `Cloudflare ${c.name} at ${Math.round(c.pct * 100)}%`, 'Getting close to the free daily limit.');
@@ -305,6 +310,7 @@ export class Stats extends DurableObject {
     this.sql.exec('DELETE FROM peaks WHERE hour < ?', cutoff);
     for (const t of ['viewers', 'dims', 'titles', 'searches']) this.sql.exec(`DELETE FROM ${t} WHERE day < ?`, cutDay);
     this.sql.exec('DELETE FROM health WHERE at < ?', now - 8 * DAY);
+    this.sql.exec('DELETE FROM relay_checks WHERE at < ?', now - 8 * DAY);
     this.sql.exec('DELETE FROM errlog WHERE id NOT IN (SELECT id FROM errlog ORDER BY id DESC LIMIT 400)');
     this.sql.exec('DELETE FROM alerts WHERE id NOT IN (SELECT id FROM alerts ORDER BY id DESC LIMIT 200)');
     return { ok, ms };
@@ -330,6 +336,20 @@ export class Stats extends DurableObject {
     if (this.env.CF_API_TOKEN && this.env.CF_ACCOUNT_ID) {
       try { out.cloudflare = { ...(await this.cloudflareUsage()), at: Date.now() }; out.cloudflareError = ''; }
       catch (e) { out.cloudflareError = String((e && e.message) || e).slice(0, 200); }
+    }
+    if (this.env.RELAY_STATS_URL && this.env.RELAY_STATS_TOKEN) {
+      // The Lagos relay's own stats; a failed read is recorded as the relay being down
+      let up = 0, mb = null, detail = '';
+      try {
+        const r = await fetch(this.env.RELAY_STATS_URL, { headers: { Authorization: 'Bearer ' + this.env.RELAY_STATS_TOKEN }, signal: AbortSignal.timeout(20_000) });
+        if (!r.ok) throw new Error('relay answered ' + r.status);
+        out.lagos = { ...(await r.json()), readAt: Date.now() }; out.lagosError = '';
+        const sv = out.lagos.services || {};
+        up = sv['hextv-relay'] === 'active' && sv.caddy === 'active' ? 1 : 0;
+        if (!up) detail = 'service stopped: ' + Object.entries(sv).filter(([, s]) => s !== 'active').map(([n]) => n).join(', ');
+        if (out.lagos.moviebox) { mb = out.lagos.moviebox.ok ? 1 : 0; if (!mb) detail = out.lagos.moviebox.detail || 'MovieBox check failed'; }
+      } catch (e) { out.lagosError = detail = String((e && e.message) || e).slice(0, 200); }
+      this.sql.exec('INSERT OR REPLACE INTO relay_checks (at, up, mb, detail) VALUES (?, ?, ?, ?)', Date.now(), up, mb, detail);
     }
     this.providers = out;
     await this.ctx.storage.put('providers', out);
@@ -433,12 +453,12 @@ export class Stats extends DurableObject {
     const monthEnd = Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1);
     const dayStart = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
     const P = this.providers || {};
-    const own = this.sumSince(monthStart, ['relay_bytes']), own24 = this.sumSince(now - DAY, ['relay_bytes']);
     const t = this.sumSince(dayStart, ['joins', 'beacons', 'config_hits', 'reports', 'ws_msgs', 'admin_calls', 'health_ok', 'health_fail']);
 
-    /* Vercel: real usage when connected (and from this month), otherwise HexTV's estimate of the relay */
+    /* Vercel: real usage when connected (and from this month). Movies are relayed from Lagos since
+       2026-11-06, so without Vercel's numbers there is nothing left to estimate. */
     const pv = P.vercel && P.vercel.periodEnd > now ? P.vercel : null;   // still inside its billing period
-    const fot = pv ? pv.fot : own.relay_bytes, fot24h = pv ? pv.fot24h : own24.relay_bytes;
+    const fot = pv ? pv.fot : 0, fot24h = pv ? pv.fot24h : 0;
     const cpuH = pv ? pv.cpuMs / 3.6e6 : 0, memGBh = pv ? (pv.memAvgMb / 1024) * (pv.durationMs / 3.6e6) : 0;
     const fdt = pv ? pv.fdt : null, requests = pv ? pv.requests : null;
     const cost = {
@@ -470,8 +490,50 @@ export class Stats extends DurableObject {
     ].map(c => ({ ...c, pct: c.used == null ? 0 : c.used / c.limit }));
     return {
       vercel,
-      cloudflare: { connected: !!pc, error: P.cloudflareError || '', notes: pc ? pc.notes : [], at: pc ? pc.at : null, source: pc ? 'Cloudflare' : 'HexTV count', items, resets: dayStart + DAY }
+      cloudflare: { connected: !!pc, error: P.cloudflareError || '', notes: pc ? pc.notes : [], at: pc ? pc.at : null, source: pc ? 'Cloudflare' : 'HexTV count', items, resets: dayStart + DAY },
+      lagos: this.lagosLimits(P, now)
     };
+  }
+
+  /* Lagos relay: the server's own report (relay_stats.py), at most 1h old, plus our check history */
+  lagosLimits(P, now) {
+    const L = P.lagos && now - P.lagos.readAt < HOUR ? P.lagos : null;
+    const checks = this.sql.exec('SELECT at, up, mb, detail FROM relay_checks WHERE at > ? ORDER BY at', now - 2 * DAY).toArray();
+    const d = new Date(now);
+    let renews = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), WHOGOHOST_C1.renewDay);
+    if (renews <= now) renews = Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, WHOGOHOST_C1.renewDay);
+    return {
+      configured: !!(this.env.RELAY_STATS_URL && this.env.RELAY_STATS_TOKEN),
+      connected: !!L, error: P.lagosError || '', at: L ? L.readAt : null,
+      services: L ? L.services : null, uptimeS: L ? L.uptimeS : null,
+      cpuPct: L ? L.cpuPct : null, cpuMax24h: L ? L.cpuMax24h : null, load: L ? L.load : null,
+      mem: L ? L.mem : null, disk: L ? L.disk : null, net: L ? L.net : null, viewersNow: L ? L.viewersNow : null,
+      moviebox: L ? L.moviebox : null, mbChecks: L ? L.checks || [] : [],
+      checks, uptime: checks.length ? checks.filter(c => c.up).length / checks.length : null,
+      plan: { ...WHOGOHOST_C1, renews }
+    };
+  }
+
+  async lagosAlerts(L, now) {
+    if (!L.configured) return;
+    const last2 = this.sql.exec('SELECT up, mb, detail FROM relay_checks ORDER BY at DESC LIMIT 2').toArray();
+    if (last2.length === 2 && last2.every(c => !c.up)) {
+      await this.notify('critical', 'lagos_down', 'Lagos relay is down', `The last two checks failed (${last2[0].detail || 'no answer'}). Movies on the website won't play. Check the server in WhoGoHost.`);
+    } else if (last2.length === 2 && last2.every(c => c.up && c.mb === 0)) {
+      await this.notify('critical', 'lagos_moviebox', 'MovieBox is refusing the Lagos relay', `Two checks in a row could not fetch video from Lagos (${last2[0].detail || 'unknown'}). Movies on the website won't play.`);
+    }
+    if (!L.connected) return;
+    const tx = L.net ? L.net.monthTx / GB : 0;
+    if (tx >= WHOGOHOST_C1.fairUseHardGB) await this.notify('critical', 'lagos_bw_hard', `Lagos relay sent ${Math.round(tx)} GB this month`, 'Well past 1 TB. WhoGoHost may limit the server under "fair use"; ask support or consider a bigger plan.');
+    else if (tx >= WHOGOHOST_C1.fairUseGB) await this.notify('warning', 'lagos_bw', `Lagos relay sent ${Math.round(tx)} GB this month`, 'Over 1 TB. The plan is "unlimited, fair use"; keep an eye on it.');
+    if (L.mem && L.mem.used / L.mem.total >= 0.9) await this.notify('warning', 'lagos_mem', 'Lagos relay memory nearly full', `${Math.round(L.mem.used / L.mem.total * 100)}% of 1 GB in use. Many viewers at once, or the relay needs a restart.`);
+    if (L.disk && L.disk.used / L.disk.total >= 0.85) await this.notify('warning', 'lagos_disk', 'Lagos relay disk nearly full', `${Math.round(L.disk.used / L.disk.total * 100)}% of the disk is used.`);
+    // Renewal: once, 3 days before (WhoGoHost renews the card payment automatically)
+    const daysToRenew = (L.plan.renews - now) / DAY;
+    const rkey = 'lagos_renew_' + dayOf(L.plan.renews);
+    if (daysToRenew <= 3 && !this.sql.exec('SELECT 1 FROM alerts WHERE akey = ? LIMIT 1', rkey).toArray().length) {
+      await this.notify('info', rkey, `Lagos relay renews on ${new Date(L.plan.renews).toUTCString().slice(0, 11)}`, `WhoGoHost C1, ₦${WHOGOHOST_C1.priceNGN.toLocaleString('en')} plus 7.5% VAT, charged to the saved card.`, true);
+    }
   }
 
   summary(days) {

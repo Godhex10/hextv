@@ -2,3 +2,4 @@ node_modules/
 .wrangler/
 .dev.vars
 dashboard-password.txt
+relay-stats-token.txt
