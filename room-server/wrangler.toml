@@ -33,3 +33,6 @@ DASHBOARD_PASSWORD_SHA256 = "737cf29528ecfdbb706ae76b84cdf35263c3241f1a86315ae83
 VERCEL_TEAM_ID = "team_6RzHwdguoZ0XkpnW3H62tNN5"
 CF_ACCOUNT_ID = "ae9225caeae588bc224f90dddd5062cf"
 # Telegram alerts: set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID with `npx wrangler secret put`
+# Lagos movie relay stats (relay_stats.py on the WhoGoHost server); the key is in relay-stats-token.txt:
+#   npx wrangler secret put RELAY_STATS_TOKEN
+RELAY_STATS_URL = "https://102-68-85-106.sslip.io/stats"
