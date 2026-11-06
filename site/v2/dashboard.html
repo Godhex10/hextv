@@ -566,10 +566,23 @@ body.still .tbl tbody tr, body.still .alert-row, body.still .split span { transi
 
       <!-- 5. Limits -->
       <section id="limits">
-        <div class="sec-head reveal"><span class="idx">05</span><h2>Usage &amp; costs</h2><p>Vercel Pro and Cloudflare Free · read from each provider every 15 minutes</p></div>
+        <div class="sec-head reveal"><span class="idx">05</span><h2>Usage &amp; costs</h2><p>Vercel Pro, the Lagos relay and Cloudflare Free · read every 15 minutes</p></div>
         <div class="usage-bar reveal" id="usageBar"></div>
-        <h3 class="usage-h reveal"><i class="fa-solid fa-triangle"></i> Vercel · Pro plan (website, library, video relay)</h3>
+        <h3 class="usage-h reveal"><i class="fa-solid fa-triangle"></i> Vercel · Pro plan (website, library, video links)</h3>
         <div class="grid g3 stack" id="vercelCards"></div>
+        <h3 class="usage-h reveal"><i class="fa-solid fa-server"></i> Lagos relay · WhoGoHost C1 (movies on the website)</h3>
+        <div class="grid g3 stack">
+          <div class="card span2 reveal">
+            <div class="card-h"><h3><i class="fa-solid fa-tower-broadcast"></i>Relay status</h3><span class="sub">checked every 15 min · last 48h</span><div class="right" id="lagosUptime"></div></div>
+            <div class="strip" id="lagosStrip"></div>
+            <div class="strip-axis"><span>48h ago</span><span>now</span></div>
+          </div>
+          <div class="card reveal" style="--d:80ms" id="lagosMovieBox"></div>
+          <div class="card reveal" id="lagosViewers"></div>
+          <div class="card reveal" style="--d:80ms" id="lagosServer"></div>
+          <div class="card reveal" style="--d:160ms" id="lagosPlan"></div>
+        </div>
+        <div class="grid g4 stack mt" id="lagosCards"></div>
         <h3 class="usage-h reveal"><i class="fa-solid fa-cloud"></i> Cloudflare · Free plan (rooms, chat, stats) — resets daily at 00:00 UTC</h3>
         <div class="grid g3 stack" id="cfCards"></div>
       </section>
@@ -1179,7 +1192,7 @@ body.still .tbl tbody tr, body.still .alert-row, body.still .split span { transi
   }
 
   function renderLimits() {
-    const L = data.limits, V = L.vercel, F = L.cloudflare;
+    const L = data.limits, V = L.vercel, F = L.cloudflare, LG = L.lagos || {};
     const st = p => p >= 1 ? ['critical', 'fa-circle-exclamation', 'Over'] : p >= 0.9 ? ['critical', 'fa-circle-exclamation', 'Nearly used up'] : p >= 0.7 ? ['warning', 'fa-triangle-exclamation', 'Getting close'] : ['good', 'fa-circle-check', 'Plenty left'];
     const gb = b => b == null ? '—' : (b / 1e9 >= 100 ? Math.round(b / 1e9) : (b / 1e9).toFixed(2)) + ' GB';
     const usd = n => '$' + (Number(n) || 0).toFixed(2);
@@ -1191,6 +1204,7 @@ body.still .tbl tbody tr, body.still .alert-row, body.still .split span { transi
     $('usageBar').innerHTML = `
       <span class="src"><span class="dot${V.connected ? '' : ' off'}"></span>Vercel: <b>${V.connected ? 'connected' : 'not connected'}</b>${V.error ? ` <span class="chip" title="${esc(V.error)}">last read failed</span>` : ''}</span>
       <span class="src"><span class="dot${F.connected ? '' : ' off'}"></span>Cloudflare: <b>${F.connected ? 'connected' : 'not connected'}</b>${F.error ? ` <span class="chip" title="${esc(F.error)}">last read failed</span>` : ''}</span>
+      <span class="src"><span class="dot${LG.connected ? '' : ' off'}"></span>Lagos relay: <b>${LG.connected ? 'connected' : LG.configured ? 'not answering' : 'not connected'}</b>${LG.error ? ` <span class="chip" title="${esc(LG.error)}">last read failed</span>` : ''}</span>
       <span>Vercel Pro · period <b>${dayLbl(V.periodStart)} – ${dayLbl(V.resets)}</b>${V.invoice ? ` · plan invoice <b>${usd(V.invoice.total)} ${V.invoice.due > 0 ? 'unpaid (due ' + usd(V.invoice.due) + ')' : 'paid'}</b>` : ''}</span>
       <span>Charges beyond the $20 credit this period: <b>${V.onDemandKnown ? usd(V.onDemand) : 'unknown'}</b></span>
       <span>Spending cap: <b>${b ? usd(b.amount) + (b.pause ? ' · pauses at the cap' : ' · does NOT pause') : 'unknown'}</b></span>
@@ -1201,13 +1215,12 @@ body.still .tbl tbody tr, body.still .alert-row, body.still .split span { transi
 
     const vCards = [
       { k: 'credit', icon: 'fa-wallet', name: 'Monthly credit', used: usd(V.creditUsed), limit: '$20 credit', p: V.creditPct,
-        meta: `Movie traffic ${usd(V.cost.fot)} · servers ${usd(V.cost.cpu + V.cost.memory)}${V.cost.fdt + V.cost.requests > 0 ? ` · pages ${usd(V.cost.fdt + V.cost.requests)}` : ''} · this period since ${dayLbl(V.periodStart)}, resets ${dayLbl(V.resets)}`, src: vSrc, est: true },
-      { k: 'fot', icon: 'fa-film', name: 'Movie traffic', used: gb(V.fot), limit: `${gb(V.creditGB)} (what $20 buys at $${V.prices.fotPerGB}/GB)`, p: V.fot / V.creditGB,
-        meta: `Last 24 hours: ${gb(V.fot24h)} ≈ ${usd(V.perDay)}/day${V.daysLeft != null ? (V.daysLeft <= 0 ? ' · credit used up' : V.daysLeft > 60 ? ' · at this pace the credit lasts more than 2 months' : ` · credit lasts ~${V.daysLeft.toFixed(1)} more days at this pace`) : ''}`, src: vSrc, est: !V.connected },
+        // Movies are relayed from Lagos since 6 Nov; earlier relay traffic this period still shows here
+        meta: `Servers ${usd(V.cost.cpu + V.cost.memory)}${V.cost.fdt + V.cost.requests > 0 ? ` · pages ${usd(V.cost.fdt + V.cost.requests)}` : ''}${V.cost.fot >= 0.01 ? ` · old movie relay ${usd(V.cost.fot)}` : ''} · this period since ${dayLbl(V.periodStart)}, resets ${dayLbl(V.resets)}`, src: vSrc, est: true },
       { k: 'spend', icon: 'fa-credit-card', name: 'Charges beyond credit', used: V.onDemandKnown ? usd(V.onDemand) : '—', limit: b ? `${usd(b.amount)} cap` : 'cap unknown', p: b && b.amount ? V.onDemand / b.amount : 0,
         meta: b ? (b.pause ? 'Vercel pauses the projects at the cap' : 'The cap only sends emails — charges continue past it') : 'Connect Vercel to see this', src: vSrc, est: !V.connected, warnIf: b && !b.pause },
-      { k: 'fdt', icon: 'fa-globe', name: 'Pages & data transfer', used: gb(V.fdt), limit: '1 TB included', p: V.fdt == null ? 0 : V.fdt / 1e12, meta: 'Everything sent to visitors, movies included', src: vSrc, est: !V.connected },
-      { k: 'req', icon: 'fa-arrow-right-arrow-left', name: 'CDN requests', used: V.requests == null ? '—' : fmtN(V.requests), limit: '1M included', p: V.requests == null ? 0 : V.requests / 1e6, meta: 'Page loads, library and relay requests', src: vSrc, est: !V.connected },
+      { k: 'fdt', icon: 'fa-globe', name: 'Pages & data transfer', used: gb(V.fdt), limit: '1 TB included', p: V.fdt == null ? 0 : V.fdt / 1e12, meta: 'Everything Vercel sends to visitors (movies now come from Lagos)', src: vSrc, est: !V.connected },
+      { k: 'req', icon: 'fa-arrow-right-arrow-left', name: 'CDN requests', used: V.requests == null ? '—' : fmtN(V.requests), limit: '1M included', p: V.requests == null ? 0 : V.requests / 1e6, meta: 'Page loads, library and video-link requests', src: vSrc, est: !V.connected },
       { k: 'cpu', icon: 'fa-microchip', name: 'Server time', used: V.cpuH ? V.cpuH.toFixed(2) + ' h' : '—', limit: `CPU · $${V.prices.cpuPerHour.toFixed(2)}/h`, p: V.creditUsed ? (V.cost.cpu + V.cost.memory) / V.credit : 0,
         meta: `CPU ${usd(V.cost.cpu)} + memory ${usd(V.cost.memory)} this month`, src: vSrc, est: !V.connected }
     ];
@@ -1221,6 +1234,65 @@ body.still .tbl tbody tr, body.still .alert-row, body.still .split span { transi
 
     drawGauges($('vercelCards'), vCards, st);
     drawGauges($('cfCards'), cCards, st);
+    renderLagos(LG, st, gb);
+  }
+
+  // Lagos relay (WhoGoHost): status from our checks, everything else from the server's own report
+  function renderLagos(LG, st, gb) {
+    const lSrc = LG.connected ? `Lagos server · ${ago(LG.at)}` : LG.configured ? 'Lagos server not answering' : 'Lagos relay not connected';
+    const badge = (g, text) => `<span class="status ${g}"><i class="fa-solid ${g === 'good' ? 'fa-circle-check' : g === 'warning' ? 'fa-triangle-exclamation' : g === 'info' ? 'fa-circle-info' : 'fa-circle-exclamation'}"></i>${text}</span>`;
+    const head = (icon, name, right) => `<div class="card-h"><h3><i class="fa-solid ${icon}"></i>${name}</h3>${right ? `<div class="right">${right}</div>` : ''}</div>`;
+    const big = (v, l) => `<div class="big-metric"><span class="v">${v}</span><span class="l">${l}</span></div>`;
+    const meta = t => `<div class="sub" style="line-height:1.6">${t}</div>`;
+
+    // 48h strip: green = relay up and MovieBox fine, amber = up but MovieBox refused, red = down
+    const checks = LG.checks || [], strip = $('lagosStrip');
+    strip.classList.remove('in');
+    const pad = Math.max(0, 192 - checks.length);
+    const col = c => !c.up ? C.critical : c.mb === 0 ? C.warning : C.good;
+    strip.innerHTML = '<span style="background:#1c1c24"></span>'.repeat(pad) + checks.slice(-192).map((c, i) => `<span style="background:${col(c)};transition-delay:${i * 4}ms"></span>`).join('');
+    [...strip.querySelectorAll('span')].slice(pad).forEach((s, i) => { const c = checks.slice(-192)[i];
+      bindTip(s, `<b>${!c.up ? 'Down' : c.mb === 0 ? 'Up · MovieBox refused' : 'Up'}</b>${esc(new Date(c.at).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }))}${c.detail ? '<br>' + esc(c.detail) : ''}`); });
+    nextFrame(() => strip.classList.add('in'));
+    const last = checks[checks.length - 1];
+    $('lagosUptime').innerHTML = !LG.configured ? '<span class="sub">not connected yet</span>'
+      : (LG.uptime == null ? '' : badge(LG.uptime >= 0.99 ? 'good' : LG.uptime >= 0.95 ? 'warning' : 'critical', `${fmtPct(LG.uptime)} uptime`))
+        + (last ? ` <span class="sub" style="margin-left:8px">${last.up ? 'up' : 'down'} · ${ago(last.at)}</span>` : '');
+
+    const mb = LG.moviebox;
+    $('lagosMovieBox').innerHTML = head('fa-film', 'MovieBox from Lagos', mb ? badge(mb.ok ? 'good' : 'critical', mb.ok ? 'Accepting' : 'Refusing') : '')
+      + (mb ? big(mb.ok && mb.mbps != null ? mb.mbps + ' Mbit/s' : mb.status || '—', mb.ok ? 'download speed in the last check' : 'MovieBox answer')
+        + meta(`${mb.ok ? 'Video fetched from the Lagos server' : esc(mb.detail || 'Check failed')} · ${ago(mb.at * 1000)} · ${(mb.ms / 1000).toFixed(1)}s`
+          + (LG.mbChecks.length ? ` · ${fmtPct(LG.mbChecks.filter(c => c.ok).length / LG.mbChecks.length)} of checks OK in 48h` : ''))
+        : `<div class="empty">${LG.configured ? 'No check yet' : 'Connect the Lagos relay to see this'}</div>`);
+
+    $('lagosViewers').innerHTML = head('fa-users', 'Watching through Lagos')
+      + (LG.connected ? big(fmtN(LG.viewersNow), LG.viewersNow === 1 ? 'device connected now' : 'devices connected now')
+        + meta(LG.net ? `Last 24h: ${gb(LG.net.tx24h)} sent to viewers` : 'Bandwidth counter starting') : `<div class="empty">No data</div>`);
+
+    const sv = LG.services || {}, allUp = LG.connected && Object.values(sv).every(s => s === 'active');
+    const upFor = LG.uptimeS == null ? '—' : LG.uptimeS >= 86400 ? Math.floor(LG.uptimeS / 86400) + 'd ' + Math.floor(LG.uptimeS % 86400 / 3600) + 'h' : Math.floor(LG.uptimeS / 3600) + 'h ' + Math.floor(LG.uptimeS % 3600 / 60) + 'm';
+    $('lagosServer').innerHTML = head('fa-server', 'Server', LG.connected ? badge(allUp ? 'good' : 'critical', allUp ? 'Running' : 'Service stopped') : '')
+      + (LG.connected ? big(upFor, 'since last restart')
+        + meta(`Relay <b>${esc(sv['hextv-relay'] || '?')}</b> · https <b>${esc(sv.caddy || '?')}</b>${LG.load ? ` · load ${LG.load[0].toFixed(2)}` : ''}<br>Ubuntu 24.04 · 1 vCPU · 1 GB · Lagos, Nigeria`) : `<div class="empty">No data</div>`);
+
+    const P = LG.plan || {}, daysTo = P.renews ? Math.ceil((P.renews - Date.now()) / 864e5) : null;
+    $('lagosPlan').innerHTML = head('fa-receipt', 'Plan & renewal', daysTo != null ? badge(daysTo <= 3 ? 'warning' : 'info', daysTo <= 0 ? 'Renews today' : `Renews in ${daysTo} day${daysTo === 1 ? '' : 's'}`) : '')
+      + big('₦' + fmtN(P.priceNGN || 0), 'a month + 7.5% VAT')
+      + meta(`WhoGoHost ${esc(P.plan || 'C1')} · next payment <b>${P.renews ? dayLbl(P.renews) : '—'}</b> from the saved card<br>200 Mbit port · "unlimited, fair use" bandwidth`);
+
+    const n = LG.net, pct = (u, t) => (u == null || !t ? 0 : u / t);
+    const lCards = [
+      { k: 'l-bw', icon: 'fa-arrow-up-from-bracket', name: 'Sent to viewers', used: n ? gb(n.monthTx) : '—', limit: `${P.fairUseGB ? P.fairUseGB / 1000 : 1} TB fair-use guide`, p: n ? n.monthTx / ((P.fairUseGB || 1000) * 1e9) : 0,
+        meta: n ? `This month · from MovieBox ${gb(n.monthRx)} · counting since ${dayLbl(n.since * 1000)}` : 'No data', src: lSrc, est: !LG.connected },
+      { k: 'l-mem', icon: 'fa-memory', name: 'Memory', used: LG.mem ? fmtB(LG.mem.used) : '—', limit: LG.mem ? fmtB(LG.mem.total) : '1 GB', p: LG.mem ? pct(LG.mem.used, LG.mem.total) : 0,
+        meta: 'Right now · rises with more viewers', src: lSrc, est: !LG.connected },
+      { k: 'l-disk', icon: 'fa-hard-drive', name: 'Disk', used: LG.disk ? fmtB(LG.disk.used) : '—', limit: LG.disk ? fmtB(LG.disk.total) : '20 GB', p: LG.disk ? pct(LG.disk.used, LG.disk.total) : 0,
+        meta: 'Movies are passed through, not stored', src: lSrc, est: !LG.connected },
+      { k: 'l-cpu', icon: 'fa-microchip', name: 'CPU', used: LG.cpuPct == null ? '—' : LG.cpuPct + '%', limit: '1 vCPU', p: LG.cpuPct == null ? 0 : LG.cpuPct / 100,
+        meta: `Average of the last 15 min${LG.cpuMax24h != null ? ` · busiest minute in 24h: ${LG.cpuMax24h}%` : ''}`, src: lSrc, est: !LG.connected }
+    ];
+    drawGauges($('lagosCards'), lCards, st);
   }
 
   // 270° ring gauges with marks at 70% and 90%
