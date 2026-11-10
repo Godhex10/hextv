@@ -1,6 +1,7 @@
 /* HexTV inside its apps: Windows (window.HexDesktop, from the Electron preload) and Android
    (window.HexAndroid, from the app's WebView). Gives both one interface, window.HexNative, and the
    app-only touches: no website home page or dashboard, and a labelled Create Room button.
+   The same touches apply when an iPhone opens the site from its Home Screen icon.
    Loaded early in <head>; does nothing in a normal browser. */
 (function () {
   'use strict';
@@ -23,15 +24,41 @@
     window.HexNative = window.HexDesktop;
   }
   const N = window.HexNative;
-  if (!N) return;
+  // iPhone/iPad: the site can be added to the Home Screen (Safari's Share → "Add to Home Screen")
+  // and then opens full screen from its icon. It's still Safari underneath, so there's no HexNative
+  // and movies play through the relay as usual; it just looks and starts like the apps.
+  const apple = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+  const homeScreen = !N && (navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches);
+  // iPhones zoom the page in by themselves (turning sideways, tapping a text field) and stay
+  // zoomed, pushing the player's controls off screen. maximum-scale stops that; on iPhones it
+  // doesn't block pinch-zoom (it would on Android, so it's Apple only).
+  const vp = document.querySelector('meta[name="viewport"]');
+  if (apple && vp && !/maximum-scale/.test(vp.content)) vp.content += ', maximum-scale=1';
+  if (apple && !N && !document.querySelector('link[rel="manifest"]')) {
+    const m = document.createElement('link');
+    m.rel = 'manifest';
+    m.href = 'manifest.json';   // iPhone only: Android and computers are pointed to the real apps
+    document.head.appendChild(m);
+  }
+  if (!N && !homeScreen) return;
+  const platform = N ? N.platform : 'homescreen';
 
-  document.documentElement.classList.add('in-app', 'in-app-' + N.platform);
+  document.documentElement.classList.add('in-app', 'in-app-' + platform);
   // The apps open on the library: the website's home page and the dashboard aren't part of them
   if (/\/(index\.html)?$/.test(location.pathname) || /\/dashboard\.html$/.test(location.pathname)) {
     location.replace('library.html');
     return;
   }
-  if (N.platform === 'android') splash();
+  // The Home Screen icon can remember the page it was added from; every launch starts on the library
+  if (homeScreen) {
+    let launched = true;
+    try { launched = sessionStorage.getItem('hx_launched') === '1'; sessionStorage.setItem('hx_launched', '1'); } catch (e) { /* storage blocked */ }
+    if (!launched && !/\/library\.html$/.test(location.pathname)) {
+      location.replace('library.html');
+      return;
+    }
+  }
+  if (platform === 'android' || homeScreen) splash();
   document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('a.btn-back[href="index.html"]').forEach(a => a.remove());
     document.querySelectorAll('a.brand[href="index.html"]').forEach(a => a.setAttribute('href', 'library.html'));

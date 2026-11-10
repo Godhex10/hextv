@@ -7,6 +7,11 @@
 <title>HexTV — Movie Library</title>
 <link rel="icon" href="img/hextv-h.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="img/hextv-icon-180.png">
+<!-- Added to an iPhone's Home Screen it opens full screen, like an app (js/inapp.js) -->
+<meta name="theme-color" content="#050507">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="HexTV">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,400&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css" integrity="sha512-2SwdPD6INVrV/lHTZbO2nodKhrnDdJK9/kg2XD1r9uGqPo1cUbujc+IYdlYdEErWNu69gVcYgdxlmVmzTWnetw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
 <link rel="stylesheet" href="css/base.css">
@@ -558,5 +563,6 @@ document.addEventListener('keydown', e => {
 loadHome();
 </script>
 <script src="js/ui.js"></script>
+<script src="js/ios-install.js"></script>
 </body>
 </html>
