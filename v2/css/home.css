@@ -265,7 +265,7 @@ footer { position: relative; overflow: hidden; padding: 3.5rem clamp(1.25rem, 4v
 }
 
 /* ── Hero: apps coming soon ─────────────────────── */
-.app-soon { margin: 22px 0 6px; }
+.app-soon { margin: 22px 0 6px; position: relative; z-index: 3; }
 .app-soon-label { display: flex; justify-content: center; align-items: center; gap: 10px; font-size: .72rem; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
 .app-soon-label::before, .app-soon-label::after { content: ''; height: 1px; width: 26px; background: rgba(255, 255, 255, .18); }
 .app-badges { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
@@ -278,4 +278,17 @@ footer { position: relative; overflow: hidden; padding: 3.5rem clamp(1.25rem, 4v
 .app-badge b { display: block; font-size: .98rem; font-weight: 700; line-height: 1.2; }
 .app-badge .soon { position: absolute; top: -9px; right: -8px; font-size: .58rem; font-weight: 800; letter-spacing: .12em; padding: 3px 8px; border-radius: 99px;
   background: var(--grad-red); box-shadow: 0 6px 16px -6px rgba(229, 9, 20, .9); }
+a.app-badge { text-decoration: none; cursor: pointer; transition: background .2s, border-color .2s, transform .2s; }
+a.app-badge:hover { background: rgba(255, 255, 255, .11); border-color: rgba(255, 255, 255, .28); transform: translateY(-2px); }
+.app-badge-tip { font: inherit; text-align: left; cursor: pointer; }
+.app-badge .fa-apple { color: #f2f2f5; }
+.app-tip { position: absolute; bottom: calc(100% + 10px); left: 50%; width: max-content; max-width: 230px; padding: 10px 14px; border-radius: 12px;
+  background: #16161c; border: 1px solid rgba(255, 255, 255, .16); box-shadow: 0 14px 30px -10px rgba(0, 0, 0, .8);
+  font-size: .85rem; font-weight: 700; line-height: 1.35; text-align: center; white-space: normal;
+  opacity: 0; pointer-events: none; transform: translate(-50%, 6px); transition: opacity .18s, transform .18s; z-index: 5; }
+.app-tip small { display: block; margin-top: 4px; font-size: .74rem; font-weight: 400; color: var(--muted); letter-spacing: 0; }
+.app-tip::after { content: ''; position: absolute; top: 100%; left: 50%; margin-left: -6px; border: 6px solid transparent; border-top-color: #16161c; }
+.app-badge-tip:hover .app-tip, .app-badge-tip:focus-visible .app-tip, .app-badge-tip.show .app-tip { opacity: 1; transform: translate(-50%, 0); }
+.app-note { margin-top: 10px; font-size: .78rem; color: var(--muted); text-align: center; }
+.cta-actions { display: flex; justify-content: center; }
 @media (max-width: 640px) { .app-badge { padding: 9px 14px 9px 12px; } .app-badge b { font-size: .9rem; } }

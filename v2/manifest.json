@@ -1,0 +1,14 @@
+{
+  "name": "HexTV",
+  "short_name": "HexTV",
+  "description": "Watch movies with friends, in sync.",
+  "start_url": "library.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#050507",
+  "theme_color": "#050507",
+  "icons": [
+    { "src": "img/hextv-icon-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "img/hextv-icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

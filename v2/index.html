@@ -8,6 +8,10 @@
 <title>HexTV — Watch Movies With Friends</title>
 <link rel="icon" href="img/hextv-h.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="img/hextv-icon-180.png">
+<!-- Added to an iPhone's Home Screen it opens full screen, like an app (js/inapp.js) -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="HexTV">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,400&display=swap" rel="stylesheet">
@@ -60,11 +64,14 @@
       <a href="#how" class="btn btn-glass btn-lg magnetic">How it Works</a>
     </div>
     <div class="app-soon">
-      <div class="app-soon-label">Apps coming soon</div>
+      <div class="app-soon-label">Get the app</div>
       <div class="app-badges">
-        <span class="app-badge"><i class="fa-brands fa-windows"></i><span><small>Download for</small><b>Windows</b></span><span class="soon">SOON</span></span>
-        <span class="app-badge"><i class="fa-brands fa-android"></i><span><small>Get the APK for</small><b>Android</b></span><span class="soon">SOON</span></span>
+        <a class="app-badge" href="https://102-68-85-106.sslip.io/download/HexTV-Setup-1.0.1.exe"><i class="fa-brands fa-windows"></i><span><small>Download for</small><b>Windows</b></span></a>
+        <a class="app-badge" href="https://102-68-85-106.sslip.io/download/HexTV-1.0.3.apk"><i class="fa-brands fa-android"></i><span><small>Get the APK for</small><b>Android</b></span></a>
+        <button type="button" class="app-badge app-badge-tip" aria-describedby="iosTip"><i class="fa-brands fa-apple"></i><span><small>Add to Home Screen on</small><b>iPhone</b></span>
+          <span class="app-tip" id="iosTip" role="tooltip">No App Store needed 😎<br><small>Open this site in Safari, tap Share, then <strong>Add to Home Screen</strong>.</small></span></button>
       </div>
+      <p class="app-note">Or just watch here in your browser — no install needed.</p>
     </div>
     <div class="hero-stats">
       <div class="stat"><div class="stat-num" data-count="12000" data-div="1000" data-suffix="K+">0K+</div><div class="stat-label">Watch Parties</div></div>
@@ -89,26 +96,26 @@
   <div class="section-head">
     <div class="section-label kicker reveal">Simple as 1-2-3</div>
     <h2 class="section-title reveal" style="--d:.05s">How HexTV Works</h2>
-    <p class="section-sub reveal" style="--d:.1s">No downloads. No sign-ups required. Just paste a link and watch with friends in seconds.</p>
+    <p class="section-sub reveal" style="--d:.1s">No sign-ups. Watch in your browser or the app — pick something and you're in a room in seconds.</p>
   </div>
   <div class="steps-grid">
     <div class="step-card reveal tilt" style="--d:0s">
       <div class="step-num">01</div>
-      <div class="step-icon"><i class="fa-solid fa-link"></i></div>
-      <h3>Paste Your Video Link</h3>
-      <p>Got a direct video URL? Paste it in and we'll load it up. Works with any public .mp4 or video source.</p>
+      <div class="step-icon"><i class="fa-solid fa-film"></i></div>
+      <h3>Pick Something To Watch</h3>
+      <p>Browse the library of movies and series and pick a season and episode — or paste a YouTube link into a room.</p>
     </div>
     <div class="step-card reveal tilt" style="--d:.08s">
       <div class="step-num">02</div>
       <div class="step-icon"><i class="fa-solid fa-people-group"></i></div>
       <h3>Invite Your Friends</h3>
-      <p>Share your unique room link. Friends join instantly — no account needed to watch together.</p>
+      <p>Hit Watch, then Invite, and share the room link. It opens straight in the HexTV app if they have it — no account needed.</p>
     </div>
     <div class="step-card reveal tilt" style="--d:.16s">
       <div class="step-num">03</div>
       <div class="step-icon"><i class="fa-solid fa-play"></i></div>
       <h3>Press Play Together</h3>
-      <p>Hit play and everyone's video syncs in real time. Pause, seek, rewind — everything stays in sync.</p>
+      <p>Play, pause and seek stay in sync for everyone. On a series, the next episode starts for the whole room.</p>
     </div>
     <div class="step-card reveal tilt" style="--d:.24s">
       <div class="step-num">04</div>
@@ -132,15 +139,23 @@
         </div>
         <div class="feature-item reveal" style="--d:.12s">
           <div class="feature-icon"><i class="fa-regular fa-comments"></i></div>
-          <div class="feature-text"><h4>Live Chat</h4><p>Side-panel chat so you can react to every scene as it happens with your crew.</p></div>
+          <div class="feature-text"><h4>Chat &amp; Reactions</h4><p>Side-panel chat and one-tap reactions that float over the video, so you can react to every scene with your crew.</p></div>
         </div>
         <div class="feature-item reveal" style="--d:.19s">
-          <div class="feature-icon"><i class="fa-solid fa-lock"></i></div>
-          <div class="feature-text"><h4>Private Rooms</h4><p>Invite-only rooms with unique links. Only the people you share the link with can join.</p></div>
+          <div class="feature-icon"><i class="fa-solid fa-crown"></i></div>
+          <div class="feature-text"><h4>Host Controls</h4><p>Let everyone drive, or lock it so only the host can play, pause and change what's on.</p></div>
         </div>
         <div class="feature-item reveal" style="--d:.26s">
+          <div class="feature-icon"><i class="fa-solid fa-forward"></i></div>
+          <div class="feature-text"><h4>Binge Together</h4><p>Series come with every season and episode, and the next one starts for the whole room when an episode ends.</p></div>
+        </div>
+        <div class="feature-item reveal" style="--d:.33s">
+          <div class="feature-icon"><i class="fa-solid fa-clock-rotate-left"></i></div>
+          <div class="feature-text"><h4>Continue Watching &amp; My List</h4><p>Pick up where you stopped and save titles for later on your device — no account needed.</p></div>
+        </div>
+        <div class="feature-item reveal" style="--d:.4s">
           <div class="feature-icon"><i class="fa-solid fa-mobile-screen"></i></div>
-          <div class="feature-text"><h4>Works Everywhere</h4><p>Open in any browser on desktop, tablet, or phone. No app install required.</p></div>
+          <div class="feature-text"><h4>Browser, Android or Windows</h4><p>Watch in any browser on phone, tablet or computer — or get the app for smoother playback.</p></div>
         </div>
       </div>
     </div>
@@ -210,21 +225,29 @@
     <div class="faq-list">
       <div class="faq-item reveal">
         <button class="faq-q" aria-expanded="false">What videos can I watch on HexTV? <span class="faq-icon"><i class="fa-solid fa-plus"></i></span></button>
-        <div class="faq-a"><div>You can watch any video using a direct video URL (like an .mp4 link). We also have a library of movies and series you can browse.</div></div>
+        <div class="faq-a"><div>Movies and series from our library, with seasons, episodes and subtitles. You can also paste a YouTube link or a direct video link (like an .mp4) into a room.</div></div>
       </div>
       <div class="faq-item reveal" style="--d:.05s">
-        <button class="faq-q" aria-expanded="false">Do my friends need to create an account? <span class="faq-icon"><i class="fa-solid fa-plus"></i></span></button>
-        <div class="faq-a"><div>Nope! The host creates a room, and friends can join just by clicking the shared link. No sign-up needed to be a guest in someone else's party.</div></div>
+        <button class="faq-q" aria-expanded="false">Do I need an account? <span class="faq-icon"><i class="fa-solid fa-plus"></i></span></button>
+        <div class="faq-a"><div>Nope! Pick a title, start a room and share the link — friends join just by opening it. Your Continue Watching and My List are saved on the device you use.</div></div>
       </div>
       <div class="faq-item reveal" style="--d:.1s">
-        <button class="faq-q" aria-expanded="false">How does the video sync work? <span class="faq-icon"><i class="fa-solid fa-plus"></i></span></button>
-        <div class="faq-a"><div>When anyone presses play, pause, or seeks to a different timestamp, that event is instantly broadcast to all viewers in the room. Everyone's player jumps to the same position within milliseconds.</div></div>
+        <button class="faq-q" aria-expanded="false">Is there an app? <span class="faq-icon"><i class="fa-solid fa-plus"></i></span></button>
+        <div class="faq-a"><div>Yes — for Android (APK) and Windows, with the download buttons at the top of this page. Movies usually start faster and play smoother in the app, and room links open in it automatically. On iPhone, open the site in Safari, tap Share, then Add to Home Screen — HexTV gets its own icon and opens full screen.</div></div>
       </div>
       <div class="faq-item reveal" style="--d:.15s">
-        <button class="faq-q" aria-expanded="false">How many people can join a watch party? <span class="faq-icon"><i class="fa-solid fa-plus"></i></span></button>
-        <div class="faq-a"><div>Currently up to 20 people can join a single room. We're working on increasing this limit. The host controls playback for everyone.</div></div>
+        <button class="faq-q" aria-expanded="false">How does the video sync work? <span class="faq-icon"><i class="fa-solid fa-plus"></i></span></button>
+        <div class="faq-a"><div>When anyone presses play, pause or jumps to a different time, everyone in the room follows within moments. If the host turns on host controls, only the host can do that.</div></div>
       </div>
       <div class="faq-item reveal" style="--d:.2s">
+        <button class="faq-q" aria-expanded="false">How many people can join a watch party? <span class="faq-icon"><i class="fa-solid fa-plus"></i></span></button>
+        <div class="faq-a"><div>Bring the whole squad — there's no fixed limit on a room. Anyone with the link can join.</div></div>
+      </div>
+      <div class="faq-item reveal" style="--d:.25s">
+        <button class="faq-q" aria-expanded="false">Why is my movie buffering? <span class="faq-icon"><i class="fa-solid fa-plus"></i></span></button>
+        <div class="faq-a"><div>Usually it's a slow connection. Give it a few seconds, try a lower quality from the player settings, or use the app, which loads videos more directly.</div></div>
+      </div>
+      <div class="faq-item reveal" style="--d:.3s">
         <button class="faq-q" aria-expanded="false">Is HexTV free to use? <span class="faq-icon"><i class="fa-solid fa-plus"></i></span></button>
         <div class="faq-a"><div>Yes — completely free. Create unlimited rooms, invite unlimited friends, and chat away. No credit card required.</div></div>
       </div>
@@ -237,11 +260,10 @@
   <div class="cta-orb" aria-hidden="true"></div>
   <div class="section-label kicker reveal">Get Started Free</div>
   <h2 class="section-title reveal" style="--d:.05s">Ready to Watch Together?</h2>
-  <p class="reveal" style="--d:.1s">Create your first room in under 30 seconds. No credit card. No download.</p>
-  <form class="email-row reveal" style="--d:.15s" id="ctaForm">
-    <input type="email" class="email-input" placeholder="Enter your email address" aria-label="Email address">
-    <button type="submit" class="btn btn-primary btn-lg magnetic">Get Started <i class="fa-solid fa-arrow-right"></i></button>
-  </form>
+  <p class="reveal" style="--d:.1s">Pick a movie, share the link, press play. Free, no sign-up — in your browser or the app.</p>
+  <div class="cta-actions reveal" style="--d:.15s">
+    <a href="library.html" class="btn btn-primary btn-lg magnetic"><i class="fa-solid fa-play"></i> Browse Movies &amp; Series</a>
+  </div>
 </section>
 
 <!-- FOOTER -->
@@ -260,7 +282,6 @@
   <div class="footer-wordmark" aria-hidden="true">HEXTV</div>
   <div class="footer-bottom">
     <span>© <span id="year">2026</span> HexTV. All rights reserved.</span>
-    <span>Made with <i class="fa-solid fa-heart" style="color:var(--red)"></i> for movie lovers everywhere</span>
   </div>
 </footer>
 
@@ -338,11 +359,12 @@
     });
   });
 
-  /* ── CTA: go create a room ── */
-  document.getElementById('ctaForm').addEventListener('submit', e => {
-    e.preventDefault();
-    const a = document.createElement('a'); a.href = 'room.html'; document.body.appendChild(a); a.click(); a.remove();
-  });
+  /* ── iPhone "Add to Home Screen" tooltip: hover on a computer, tap on a phone ── */
+  (function () {
+    const tip = document.querySelector('.app-badge-tip');
+    tip.addEventListener('click', e => { e.stopPropagation(); tip.classList.toggle('show'); });
+    document.addEventListener('click', () => tip.classList.remove('show'));
+  })();
 
   document.getElementById('year').textContent = new Date().getFullYear();
 
@@ -387,5 +409,6 @@
     setInterval(() => { secs++; t.textContent = `${Math.floor(secs / 3600)}:${String(Math.floor(secs / 60) % 60).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`; }, 1000);
   })();
 </script>
+<script src="js/ios-install.js"></script>
 </body>
 </html>
