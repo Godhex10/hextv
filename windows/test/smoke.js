@@ -44,13 +44,18 @@ const exe = process.argv[2];
   await ctx.route(/streamtogether-rooms.*\/t$/, r => r.fulfill({ status: 204, body: '' }));
   const phone = await ctx.newPage();
   await phone.goto(`${SITE}/room.html?room=${room}&mb=6391474290696802080&title=Test`, { timeout: 90000, waitUntil: 'domcontentloaded' });
-  await wait(9000);
+  await wait(6000);
+  // Phones in a browser are first offered the app; this viewer stays in the browser
+  const inBrowser = phone.getByText('Watch in the browser');
+  if (await inBrowser.isVisible().catch(() => false)) await inBrowser.click();
+  await wait(3000);
   await phone.evaluate(() => dismissSyncOverlay());
   await phone.waitForFunction(() => { const v = document.querySelector('video'); return v && !v.paused && v.currentTime > 2; }, null, { timeout: 150000 }).catch(async e => { console.log('phone state:', await phone.evaluate(() => { const v = document.querySelector('video'); return { src: (v.currentSrc || '').slice(0, 60), ready: v.readyState, paused: v.paused, t: v.currentTime, err: v.error && v.error.code, status: document.getElementById('syncBtn').dataset.state, media: document.getElementById('mediaStatusText').textContent }; })); throw e; });
   await wait(15000);
   const [ta, tb] = await Promise.all([win, phone].map(p => p.evaluate(() => document.querySelector('video').currentTime)));
   console.log('app vs phone:', Math.abs(ta - tb).toFixed(3) + 's apart; app status', await win.evaluate(() => document.getElementById('syncBtn').dataset.state),
-    '· phone status', await phone.evaluate(() => document.getElementById('syncBtn').dataset.state));
+    '· phone status', await phone.evaluate(() => document.getElementById('syncBtn').dataset.state),
+    '· phone video via', await phone.evaluate(() => { const s = document.querySelector('video').currentSrc; return s.includes('/proxy?') ? new URL(s).host + ' relay' : 'direct'; }));
   // Pause in the app → the phone pauses too
   await win.evaluate(() => userPause()); await wait(2500);
   console.log('phone paused after app paused:', await phone.evaluate(() => document.querySelector('video').paused));
