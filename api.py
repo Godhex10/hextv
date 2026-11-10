@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -1283,6 +1284,9 @@ async def proxy_stream(request: Request, url: str, h: Optional[str] = None, exp:
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid headers parameter")
     rng = request.headers.get("range")
+    m = re.fullmatch(r"bytes=(\d+)-(\d*)", rng or "")
+    if m and PROXY_SEGMENT_BYTES and not PROXY_CHUNK_BYTES:
+        return await _proxy_segmented(url, headers, int(m.group(1)), int(m.group(2)) if m.group(2) else None)
     if PROXY_CHUNK_BYTES:
         # Answer at most one chunk per request; the player simply asks for the next range
         m = re.fullmatch(r"bytes=(\d+)-(\d*)", rng or "bytes=0-")
@@ -1310,6 +1314,77 @@ async def proxy_stream(request: Request, url: str, h: Optional[str] = None, exp:
         headers={k: upstream.headers[k] for k in PROXY_PASSTHROUGH if k in upstream.headers},
         background=BackgroundTask(upstream.aclose),
     )
+
+# The video CDN drops a connection after roughly 30-40MB, and a browser that sees its media
+# response break counts the video as failed. So on the relay server a range is fetched as a
+# series of smaller upstream requests, and a dropped one is picked up from the byte it stopped
+# at; the browser still gets one unbroken response.
+PROXY_SEGMENT_BYTES = int(os.environ.get("PROXY_SEGMENT_BYTES") or 16 * 1024 * 1024)
+PROXY_SEGMENT_RETRIES = 4
+
+async def _proxy_segmented(url: str, headers: Dict[str, str], start: int, end: Optional[int]):
+    client = _proxy_client()
+
+    async def open_range(a: int, b: int):
+        return await client.send(client.build_request("GET", url, headers={**headers, "Range": f"bytes={a}-{b}"}), stream=True)
+
+    upstream = await open_range(start, start + PROXY_SEGMENT_BYTES - 1 if end is None else min(end, start + PROXY_SEGMENT_BYTES - 1))
+    total = re.fullmatch(r"bytes \d+-\d+/(\d+)", upstream.headers.get("content-range", ""))
+    passthrough = {k: upstream.headers[k] for k in PROXY_PASSTHROUGH if k in upstream.headers}
+    if upstream.status_code != 206 or not total:
+        # An error, or a server that ignores ranges: hand it on as it is
+        async def as_is():
+            try:
+                async for chunk in upstream.aiter_raw():
+                    yield chunk
+            finally:
+                await upstream.aclose()
+        return StreamingResponse(as_is(), status_code=upstream.status_code, headers=passthrough)
+
+    size = int(total.group(1))
+    last = size - 1 if end is None else min(end, size - 1)
+
+    async def body():
+        pos, resp, failures = start, upstream, 0
+        try:
+            while pos <= last:
+                got = 0
+                try:
+                    if resp is None:
+                        resp = await open_range(pos, min(last, pos + PROXY_SEGMENT_BYTES - 1))
+                        if resp.status_code != 206:
+                            raise httpx.TransportError(f"CDN answered {resp.status_code}")
+                    async for chunk in resp.aiter_raw():
+                        chunk = chunk[: last - pos + 1]
+                        yield chunk
+                        pos += len(chunk)
+                        got += len(chunk)
+                        if pos > last:
+                            break
+                    if not got:
+                        raise httpx.TransportError("CDN sent nothing")
+                    failures = 0
+                except httpx.TransportError as e:
+                    # Only failures that got nowhere count towards giving up
+                    failures = 1 if got else failures + 1
+                    if failures > PROXY_SEGMENT_RETRIES:
+                        print(f"relay: gave up at byte {pos} of {size}: {e}", flush=True)
+                        raise
+                    await asyncio.sleep(0.3 * failures)
+                finally:
+                    if resp is not None:
+                        await resp.aclose()
+                        resp = None
+        finally:
+            if resp is not None:
+                await resp.aclose()
+
+    return StreamingResponse(body(), status_code=206, headers={
+        "content-type": upstream.headers.get("content-type", "video/mp4"),
+        "content-length": str(last - start + 1),
+        "content-range": f"bytes {start}-{last}/{size}",
+        "accept-ranges": "bytes",
+    })
 
 # One pooled client for all media requests: a seek then reuses an open CDN connection
 # instead of paying for a new TLS handshake every time.
