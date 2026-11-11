@@ -1286,7 +1286,12 @@ async def proxy_stream(request: Request, url: str, h: Optional[str] = None, exp:
     rng = request.headers.get("range")
     m = re.fullmatch(r"bytes=(\d+)-(\d*)", rng or "")
     if m and PROXY_SEGMENT_BYTES and not PROXY_CHUNK_BYTES:
-        return await _proxy_segmented(url, headers, int(m.group(1)), int(m.group(2)) if m.group(2) else None)
+        start, end = int(m.group(1)), int(m.group(2)) if m.group(2) else None
+        if PROXY_HEAD_DIR and start < PROXY_HEAD_MAX:
+            head = await _file_head(url, headers, fetch=start == 0)
+            if head and start < len(head[0]):
+                return _proxy_from_head(url, headers, head, start, end)
+        return await _proxy_segmented(url, headers, start, end)
     if PROXY_CHUNK_BYTES:
         # Answer at most one chunk per request; the player simply asks for the next range
         m = re.fullmatch(r"bytes=(\d+)-(\d*)", rng or "bytes=0-")
@@ -1343,44 +1348,241 @@ async def _proxy_segmented(url: str, headers: Dict[str, str], start: int, end: O
 
     size = int(total.group(1))
     last = size - 1 if end is None else min(end, size - 1)
+    return StreamingResponse(_relay_range(url, headers, start, last, size, upstream), status_code=206, headers={
+        "content-type": upstream.headers.get("content-type", "video/mp4"),
+        "content-length": str(last - start + 1),
+        "content-range": f"bytes {start}-{last}/{size}",
+        "accept-ranges": "bytes",
+    })
+
+async def _relay_range(url: str, headers: Dict[str, str], pos: int, last: int, size: int, resp=None):
+    """Yields bytes pos..last of the file, one upstream segment at a time, resuming dropped ones."""
+    client = _proxy_client()
+    failures = 0
+    try:
+        while pos <= last:
+            got = 0
+            try:
+                if resp is None:
+                    rng = f"bytes={pos}-{min(last, pos + PROXY_SEGMENT_BYTES - 1)}"
+                    resp = await client.send(client.build_request("GET", url, headers={**headers, "Range": rng}), stream=True)
+                    if resp.status_code != 206:
+                        raise httpx.TransportError(f"CDN answered {resp.status_code}")
+                async for chunk in resp.aiter_raw():
+                    chunk = chunk[: last - pos + 1]
+                    yield chunk
+                    pos += len(chunk)
+                    got += len(chunk)
+                    if pos > last:
+                        break
+                if not got:
+                    raise httpx.TransportError("CDN sent nothing")
+                failures = 0
+            except httpx.TransportError as e:
+                # Only failures that got nowhere count towards giving up
+                failures = 1 if got else failures + 1
+                if failures > PROXY_SEGMENT_RETRIES:
+                    print(f"relay: gave up at byte {pos} of {size}: {e}", flush=True)
+                    raise
+                await asyncio.sleep(0.3 * failures)
+            finally:
+                if resp is not None:
+                    await resp.aclose()
+                    resp = None
+    finally:
+        if resp is not None:
+            await resp.aclose()
+
+# Every MP4 here starts with its index (the "moov" box, which says where each frame is), and a
+# browser shows nothing until it has all of it: 2-7MB per file. The CDN is slow from Lagos in
+# the evening, so that alone took 10-20s. The relay keeps the start of each file on disk instead:
+# later viewers of the same title get it straight away, and the first one fetches it over several
+# connections at once. The CDN's file names are content hashes, so one name is always one file.
+PROXY_HEAD_DIR = os.environ.get("PROXY_HEAD_DIR") or ""
+PROXY_HEAD_MAX = 24 * 1024 * 1024        # files with a bigger index are relayed as before
+PROXY_HEAD_EXTRA = 2 * 1024 * 1024       # and a little of the film itself, so the picture starts too
+PROXY_HEAD_PARTS = 3                     # more didn't help: the CDN link from Lagos is the limit
+PROXY_HEAD_CACHE_BYTES = int(os.environ.get("PROXY_HEAD_CACHE_BYTES") or 5 * 1024 ** 3)
+_head_jobs: Dict[str, "asyncio.Future"] = {}
+
+def _head_path(url: str) -> str:
+    p = urlsplit(url)
+    return os.path.join(PROXY_HEAD_DIR, hashlib.sha1(f"{p.hostname}{p.path}".encode()).hexdigest() + ".head")
+
+def _read_head(path: str):
+    # File layout: 8 bytes with the whole file's size, then its first bytes
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+        os.utime(path)      # recently used: pruned last
+        return data[8:], int.from_bytes(data[:8], "big")
+    except (OSError, ValueError):
+        return None
+
+def _write_head(path: str, head: bytes, size: int):
+    tmp = path + ".tmp"
+    with open(tmp, "wb") as f:
+        f.write(size.to_bytes(8, "big") + head)
+    os.replace(tmp, path)
+    files = sorted((e for e in os.scandir(PROXY_HEAD_DIR) if e.name.endswith(".head")), key=lambda e: e.stat().st_mtime)
+    used = sum(e.stat().st_size for e in files)
+    for e in files:
+        if used <= PROXY_HEAD_CACHE_BYTES * 0.9:
+            break
+        used -= e.stat().st_size
+        os.remove(e.path)
+
+async def _file_head(url: str, headers: Dict[str, str], fetch: bool):
+    """(first bytes, whole size) of the file, from disk, or fetched now when `fetch` is set."""
+    path = _head_path(url)
+    if path in _head_jobs:          # someone else is fetching it right now
+        return await asyncio.shield(_head_jobs[path])
+    found = await asyncio.to_thread(_read_head, path)
+    if found or not fetch:
+        return found
+    # Shielded: a viewer who gives up doesn't stop the fetch for the others
+    job = _head_jobs[path] = asyncio.ensure_future(_fetch_head(url, headers, path))
+    job.add_done_callback(lambda _: _head_jobs.pop(path, None))
+    return await asyncio.shield(job)
+
+async def _fetch_head(url: str, headers: Dict[str, str], path: str):
+    client = _proxy_client()
+    timeout = httpx.Timeout(20.0)
+
+    async def get(a: int, b: int) -> bytes:
+        for attempt in range(3):
+            try:
+                r = await client.get(url, headers={**headers, "Range": f"bytes={a}-{b}"}, timeout=timeout)
+                if r.status_code == 206 and len(r.content) == b - a + 1:
+                    return r.content
+            except httpx.TransportError:
+                pass
+            await asyncio.sleep(0.3 * (attempt + 1))
+        raise httpx.TransportError(f"could not fetch bytes {a}-{b}")
+
+    try:
+        r = await client.get(url, headers={**headers, "Range": "bytes=0-65535"}, timeout=timeout)
+        total = re.fullmatch(r"bytes \d+-\d+/(\d+)", r.headers.get("content-range", ""))
+        if r.status_code != 206 or not total:
+            return None
+        size, first = int(total.group(1)), r.content
+        # Walk the top-level boxes to where the index ends
+        pos, moov_end = 0, 0
+        while pos + 16 <= len(first):
+            box = int.from_bytes(first[pos:pos + 4], "big")
+            kind = first[pos + 4:pos + 8]
+            if box == 1:
+                box = int.from_bytes(first[pos + 8:pos + 16], "big")
+            if box < 8 or kind == b"mdat":
+                break           # the index is at the end of this file (or it isn't an MP4)
+            if kind == b"moov":
+                moov_end = pos + box
+                break
+            pos += box
+        if not moov_end or moov_end > PROXY_HEAD_MAX:
+            return None
+        n = min(size, moov_end + PROXY_HEAD_EXTRA)
+        step = max(512 * 1024, -(-(n - len(first)) // PROXY_HEAD_PARTS))
+        parts = await asyncio.gather(*(get(a, min(n, a + step) - 1) for a in range(len(first), n, step)))
+        head = (first + b"".join(parts))[:n]
+        await asyncio.to_thread(_write_head, path, head, size)
+        return head, size
+    except (httpx.HTTPError, OSError) as e:
+        print(f"relay: could not keep the start of {urlsplit(url).path}: {e}", flush=True)
+        return None
+
+# So the first viewer of a title doesn't wait either, the relay server fetches ahead the starts of
+# everything on the Library's home rows, in the versions the website plays: the one it starts on
+# and the lighter one it drops to on a slow connection. Then again every few hours for new titles.
+PROXY_WARM = bool(PROXY_HEAD_DIR) and os.environ.get("PROXY_WARM", "1") == "1"
+PROXY_WARM_EVERY = 6 * 3600
+
+def _web_picks(streams: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    # The same order as rankStreams() in the site's js/moviebox.js: full-length, H.264, nearest 720p
+    def height(s):
+        m = re.match(r"\d+", str(s.get("quality") or ""))
+        return s.get("quality_value") or (int(m.group()) if m else 0)
+    mp4 = sorted((s for s in streams if str(s.get("format")).upper() == "MP4"), key=lambda s: (
+        1 if s.get("duration_sec") and s["duration_sec"] < 300 else 0,
+        1 if re.search(r"265|hevc", s.get("codec") or "", re.I) else 0,
+        abs(height(s) - 720)))
+    if not mp4:
+        return []
+    lighter = sorted((s for s in mp4 if 0 < height(s) < height(mp4[0])), key=height, reverse=True)
+    return mp4[:1] + lighter[:1]
+
+async def _warm_heads():
+    memo_path = os.path.join(PROXY_HEAD_DIR, "warm.json")    # title -> the files kept for it
+    while True:
+        try:
+            try:
+                with open(memo_path) as f:
+                    memo = json.load(f)
+            except (OSError, ValueError):
+                memo = {}
+            rows = (await asyncio.to_thread(catalog_home))["rows"]
+            # Row by row across: the first cards of every row (the ones on screen) go first
+            titles = []
+            for i in range(max((len(r["items"]) for r in rows), default=0)):
+                for r in rows:
+                    if i < len(r["items"]):
+                        card = r["items"][i]
+                        t = (card["subject_id"], 1 if card.get("type") == "series" else 0)
+                        if t not in titles:
+                            titles.append(t)
+            fetched = 0
+            for n, (sid, se) in enumerate(titles):
+                key = f"{sid}:{se}"
+                if memo.get(key) and all(os.path.exists(p) for p in memo[key]):
+                    continue
+                try:
+                    streams = await asyncio.to_thread(engine.get_streams, sid, season=se, episode=se)
+                except Exception:
+                    continue
+                kept = []
+                for s in _web_picks(streams):
+                    path = _head_path(s["url"])
+                    if not os.path.exists(path) and await _file_head(s["url"], s.get("headers") or {}, fetch=True):
+                        fetched += 1
+                    if os.path.exists(path):
+                        kept.append(path)
+                memo[key] = kept
+                if n % 10 == 0:
+                    await asyncio.to_thread(_save_json, memo_path, memo)
+                await asyncio.sleep(1)
+            await asyncio.to_thread(_save_json, memo_path, memo)
+            print(f"relay: warm-up done, {fetched} new files for {len(titles)} titles", flush=True)
+        except Exception as e:
+            print(f"relay: warm-up stopped: {e!r}", flush=True)
+        await asyncio.sleep(PROXY_WARM_EVERY)
+
+def _save_json(path: str, data):
+    with open(path + ".tmp", "w") as f:
+        json.dump(data, f)
+    os.replace(path + ".tmp", path)
+
+_warm_task = None
+
+@app.on_event("startup")
+async def _start_warm_up():
+    global _warm_task
+    if PROXY_WARM:
+        os.makedirs(PROXY_HEAD_DIR, exist_ok=True)
+        _warm_task = asyncio.get_running_loop().create_task(_warm_heads())
+
+def _proxy_from_head(url: str, headers: Dict[str, str], head_info, start: int, end: Optional[int]):
+    head, size = head_info
+    last = size - 1 if end is None else min(end, size - 1)
 
     async def body():
-        pos, resp, failures = start, upstream, 0
-        try:
-            while pos <= last:
-                got = 0
-                try:
-                    if resp is None:
-                        resp = await open_range(pos, min(last, pos + PROXY_SEGMENT_BYTES - 1))
-                        if resp.status_code != 206:
-                            raise httpx.TransportError(f"CDN answered {resp.status_code}")
-                    async for chunk in resp.aiter_raw():
-                        chunk = chunk[: last - pos + 1]
-                        yield chunk
-                        pos += len(chunk)
-                        got += len(chunk)
-                        if pos > last:
-                            break
-                    if not got:
-                        raise httpx.TransportError("CDN sent nothing")
-                    failures = 0
-                except httpx.TransportError as e:
-                    # Only failures that got nowhere count towards giving up
-                    failures = 1 if got else failures + 1
-                    if failures > PROXY_SEGMENT_RETRIES:
-                        print(f"relay: gave up at byte {pos} of {size}: {e}", flush=True)
-                        raise
-                    await asyncio.sleep(0.3 * failures)
-                finally:
-                    if resp is not None:
-                        await resp.aclose()
-                        resp = None
-        finally:
-            if resp is not None:
-                await resp.aclose()
+        stop = min(last + 1, len(head))
+        yield head[start:stop]
+        if last >= len(head):
+            async for chunk in _relay_range(url, headers, len(head), last, size):
+                yield chunk
 
     return StreamingResponse(body(), status_code=206, headers={
-        "content-type": upstream.headers.get("content-type", "video/mp4"),
+        "content-type": "video/mp4",
         "content-length": str(last - start + 1),
         "content-range": f"bytes {start}-{last}/{size}",
         "accept-ranges": "bytes",
